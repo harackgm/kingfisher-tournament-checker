@@ -10,10 +10,17 @@ TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
 MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
 
-# GitHubにアップロードしたロゴ画像のRaw URL
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
+
+# カテゴリごとの文字色設定（ダークモードに映える色）
+CATEGORY_COLORS = {
+    "大会エントリー": "#FF4B4B",       # 赤（受付開始などの目立つ色）
+    "大会エントリーリスト": "#0367D3", # 青（落ち着いた情報確認）
+    "大会結果": "#F4B400"              # 黄/ゴールド（結果発表）
+}
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 }
@@ -35,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（ロゴ画像追加・セル拡大版）
+# LINE通知処理（カテゴリ色分け対応版）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -44,16 +51,19 @@ def send_line_carousel(articles):
     
     bubbles = []
     for article in articles:
+        # カテゴリ名から色を取得（設定がない場合はデフォルトの緑色）
+        section_color = CATEGORY_COLORS.get(article['section'], "#1DB446")
+        
         bubble = {
             "type": "bubble",
-            "size": "kilo", # micro から kilo に拡大
+            "size": "kilo",
             "hero": {
                 "type": "image",
                 "url": LOGO_URL,
                 "size": "full",
-                "aspectRatio": "3:1", # ロゴの比率に合わせた横長設定
-                "aspectMode": "fit",  # 見切れないように全体を表示
-                "backgroundColor": "#000000" # 背景を黒に
+                "aspectRatio": "3:1",
+                "aspectMode": "fit",
+                "backgroundColor": "#000000"
             },
             "body": {
                 "type": "box",
@@ -64,8 +74,8 @@ def send_line_carousel(articles):
                         "type": "text",
                         "text": article['section'],
                         "weight": "bold",
-                        "color": "#1DB446",
-                        "size": "sm" # セル拡大に合わせて文字も少し大きく
+                        "color": section_color, # 動的に色を変更
+                        "size": "sm"
                     },
                     {
                         "type": "text",
@@ -79,7 +89,7 @@ def send_line_carousel(articles):
                         "text": article['title'],
                         "weight": "bold",
                         "color": "#FFFFFF",
-                        "size": "md", # タイトルも少し大きく
+                        "size": "md",
                         "margin": "md",
                         "wrap": True,
                         "maxLines": 3
@@ -185,15 +195,32 @@ def fetch_articles():
 def main():
     print("--- 監視処理開始 ---")
     
+    # 🌟【色確認用】3色すべてのダミーテスト通知を送信する🌟
+    print("デザイン確認用（3色）のテスト通知を送信します...")
+    color_test_articles = [
+        {
+            "section": "大会エントリー",
+            "date": "2026年9月4日",
+            "title": "【テスト・赤色】エントリー受付開始のお知らせ",
+            "url": "https://kingfisher-tochigi.com/"
+        },
+        {
+            "section": "大会エントリーリスト",
+            "date": "2026年9月4日",
+            "title": "【テスト・青色】参加者リストを更新しました",
+            "url": "https://kingfisher-tochigi.com/"
+        },
+        {
+            "section": "大会結果",
+            "date": "2026年9月4日",
+            "title": "【テスト・黄色】第1戦 大会結果発表",
+            "url": "https://kingfisher-tochigi.com/"
+        }
+    ]
+    send_line_carousel(color_test_articles)
+    
+    # 通常のスクレイピング・差分チェック（エラーが出ないかの確認のみ）
     current_articles = fetch_articles()
-    
-    # 🌟【デザイン確認用】実際のサイトの最新記事を1件だけ使って強制的にテスト通知を送る🌟
-    if current_articles:
-        print("デザイン確認用のテスト通知を送信します...")
-        test_article = current_articles[0].copy()
-        test_article['title'] = "【デザイン確認】" + test_article['title']
-        send_line_carousel([test_article])
-    
     history = load_history()
     history_urls = {item["url"] for item in history}
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
