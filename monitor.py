@@ -16,9 +16,9 @@ TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "�
 
 # カテゴリごとの文字色設定
 CATEGORY_COLORS = {
-    "大会エントリー": "#FF4B4B",
-    "大会エントリーリスト": "#0367D3",
-    "大会結果": "#F4B400"
+    "大会エントリー": "#FF4B4B",       # 赤
+    "大会エントリーリスト": "#0367D3", # 青
+    "大会結果": "#F4B400"              # 黄
 }
 
 HEADERS = {
@@ -42,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（サムネイル画像全体表示版）
+# LINE通知処理
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -82,8 +82,8 @@ def send_line_carousel(articles):
                 "url": hero_image_url,
                 "size": "full",
                 "aspectRatio": "1.51:1",
-                "aspectMode": "fit", # cover から fit に変更し、見切れを防止
-                "backgroundColor": "#000000" # 隙間ができた場合の背景を黒に指定
+                "aspectMode": "fit",
+                "backgroundColor": "#000000"
             },
             "body": {
                 "type": "box",
@@ -223,12 +223,20 @@ def main():
     
     current_articles = fetch_articles()
     
-    # 🌟【デザイン確認用】取得した実際の記事データからテスト通知する🌟
-    if len(current_articles) >= 3:
-        print("デザイン確認用のテスト通知を送信します...")
-        test_articles = current_articles[:3]
-        for i, article in enumerate(test_articles):
-            article['title'] = f"【デザイン確認】{article['title']}"
+    # 🌟【デザイン確認用】各セクションから1件ずつ抽出してテスト通知する🌟
+    print("デザイン確認用（3色）のテスト通知を送信します...")
+    test_articles = []
+    seen_sections = set()
+    for article in current_articles:
+        if article['section'] not in seen_sections:
+            test_article = article.copy()
+            test_article['title'] = f"【デザイン確認】{test_article['title']}"
+            test_articles.append(test_article)
+            seen_sections.add(article['section'])
+        if len(test_articles) == 3:
+            break
+            
+    if test_articles:
         send_line_carousel(test_articles)
     
     history = load_history()
