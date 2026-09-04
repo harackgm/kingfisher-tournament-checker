@@ -15,6 +15,9 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 }
 
+LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
+LINE_USER_ID = os.environ.get("LINE_USER_ID")
+
 # ==========================================
 # データ管理処理
 # ==========================================
@@ -27,6 +30,29 @@ def load_history():
 def save_history(history_list):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history_list, f, ensure_ascii=False, indent=2)
+
+# ==========================================
+# LINE通知処理
+# ==========================================
+def send_line_message(message_text):
+    if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
+        print("LINEの認証情報が設定されていません。通知をスキップします。")
+        return
+    
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
+    }
+    data = {
+        "to": LINE_USER_ID,
+        "messages": [{"type": "text", "text": message_text}]
+    }
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"LINE通知エラー: {e}")
 
 # ==========================================
 # スクレイピング処理
@@ -72,11 +98,9 @@ def fetch_articles():
 def main():
     print("--- 監視処理開始 ---")
     history = load_history()
-    history_urls = {item["url"] for item in history} # URLをキーにしてゆらぎ対策
+    history_urls = {item["url"] for item in history}
     
     current_articles = fetch_articles()
-    
-    # 未保存のURLのみを抽出
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
 
     if not new_articles:
@@ -92,8 +116,9 @@ def main():
     else:
         print(f"【通知対象】{new_count}件の新規更新が見つかりました。")
         for article in new_articles:
-            print(f"[{article['section']}] {article['title']}\n{article['url']}\n")
-            # TODO: ここにLINE BOTへのPOSTリクエストを追加予定
+            message = f"【更新通知】{article['section']}\n\n{article['title']}\n{article['url']}"
+            print(f"通知送信: {article['title']}")
+            send_line_message(message)
 
     # 取得した最新データを履歴に追記して保存
     updated_history = history + new_articles
