@@ -14,11 +14,11 @@ LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-che
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
-# カテゴリごとの文字色設定（ダークモードに映える色）
+# カテゴリごとの文字色設定
 CATEGORY_COLORS = {
-    "大会エントリー": "#FF4B4B",       # 赤（受付開始などの目立つ色）
-    "大会エントリーリスト": "#0367D3", # 青（落ち着いた情報確認）
-    "大会結果": "#F4B400"              # 黄/ゴールド（結果発表）
+    "大会エントリー": "#FF4B4B",
+    "大会エントリーリスト": "#0367D3",
+    "大会結果": "#F4B400"
 }
 
 HEADERS = {
@@ -42,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（カテゴリ色分け対応版）
+# LINE通知処理（サムネイル画像追加・megaサイズ版）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -51,19 +51,35 @@ def send_line_carousel(articles):
     
     bubbles = []
     for article in articles:
-        # カテゴリ名から色を取得（設定がない場合はデフォルトの緑色）
         section_color = CATEGORY_COLORS.get(article['section'], "#1DB446")
+        
+        # 記事に画像がない場合はロゴ画像をフォールバックとして使用
+        hero_image_url = article.get('img_url') if article.get('img_url') else LOGO_URL
         
         bubble = {
             "type": "bubble",
-            "size": "kilo",
+            "size": "mega", # kiloからmegaへ拡大
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#000000",
+                "paddingAll": "10px",
+                "contents": [
+                    {
+                        "type": "image",
+                        "url": LOGO_URL,
+                        "size": "sm", # ロゴはヘッダーに小さく配置
+                        "aspectMode": "fit",
+                        "align": "start"
+                    }
+                ]
+            },
             "hero": {
                 "type": "image",
-                "url": LOGO_URL,
+                "url": hero_image_url,
                 "size": "full",
-                "aspectRatio": "3:1",
-                "aspectMode": "fit",
-                "backgroundColor": "#000000"
+                "aspectRatio": "1.51:1", # サムネイル画像を綺麗に見せる比率
+                "aspectMode": "cover"
             },
             "body": {
                 "type": "box",
@@ -74,7 +90,7 @@ def send_line_carousel(articles):
                         "type": "text",
                         "text": article['section'],
                         "weight": "bold",
-                        "color": section_color, # 動的に色を変更
+                        "color": section_color,
                         "size": "sm"
                     },
                     {
@@ -181,11 +197,18 @@ def fetch_articles():
                 date_tag = article.find("span", class_="elementor-post-date")
                 date_text = date_tag.get_text(strip=True) if date_tag else ""
                 
+                # サムネイル画像のURLを取得 (data-src または src 属性)
+                img_tag = article.find("img")
+                img_url = ""
+                if img_tag:
+                    img_url = img_tag.get("data-src") or img_tag.get("src", "")
+                
                 results.append({
                     "section": section_title,
                     "date": date_text,
                     "title": a_tag.get_text(strip=True),
-                    "url": a_tag.get("href")
+                    "url": a_tag.get("href"),
+                    "img_url": img_url # 画像URLを辞書に追加
                 })
     return results
 
@@ -195,32 +218,17 @@ def fetch_articles():
 def main():
     print("--- 監視処理開始 ---")
     
-    # 🌟【色確認用】3色すべてのダミーテスト通知を送信する🌟
-    print("デザイン確認用（3色）のテスト通知を送信します...")
-    color_test_articles = [
-        {
-            "section": "大会エントリー",
-            "date": "2026年9月4日",
-            "title": "【テスト・赤色】エントリー受付開始のお知らせ",
-            "url": "https://kingfisher-tochigi.com/"
-        },
-        {
-            "section": "大会エントリーリスト",
-            "date": "2026年9月4日",
-            "title": "【テスト・青色】参加者リストを更新しました",
-            "url": "https://kingfisher-tochigi.com/"
-        },
-        {
-            "section": "大会結果",
-            "date": "2026年9月4日",
-            "title": "【テスト・黄色】第1戦 大会結果発表",
-            "url": "https://kingfisher-tochigi.com/"
-        }
-    ]
-    send_line_carousel(color_test_articles)
-    
-    # 通常のスクレイピング・差分チェック（エラーが出ないかの確認のみ）
     current_articles = fetch_articles()
+    
+    # 🌟【デザイン確認用】取得した実際の記事データから3件をテスト通知する🌟
+    if len(current_articles) >= 3:
+        print("デザイン確認用のテスト通知を送信します...")
+        # 各セクションから1件ずつピックアップして表示をテスト
+        test_articles = current_articles[:3]
+        for i, article in enumerate(test_articles):
+            article['title'] = f"【デザイン確認】{article['title']}"
+        send_line_carousel(test_articles)
+    
     history = load_history()
     history_urls = {item["url"] for item in history}
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
