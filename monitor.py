@@ -8,14 +8,13 @@ import os
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
+MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 }
 
-# GitHub SecretsからLINEのキーを取得
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
@@ -33,7 +32,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（ダークモード＆日付付き カルーセル）
+# LINE通知処理（ダークモード＆白文字ボタン）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -84,13 +83,13 @@ def send_line_carousel(articles):
                 "contents": [
                     {
                         "type": "button",
-                        "style": "primary", # primaryに変更し文字を白抜きに
-                        "color": "#555555", # ボタンの背景色をダークグレーに指定
+                        "style": "primary", # primaryで文字を白に
+                        "color": "#555555", # ボタン背景をダークグレーに
                         "height": "sm",
                         "action": {
                             "type": "uri",
                             "label": "詳細を見る",
-                            "uri": article['url'] # 本物のURLがここに入ります
+                            "uri": article['url'] # 本物のURL
                         }
                     }
                 ]
@@ -170,31 +169,33 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（本番モード）
+# メイン処理
 # ==========================================
 def main():
-    print("--- 監視処理開始（本番モード） ---")
+    print("--- 監視処理開始 ---")
+    
+    current_articles = fetch_articles()
+    
+    # 🌟【デザイン確認用】実際のサイトの最新記事を1件だけ使って強制的にテスト通知を送る🌟
+    if current_articles:
+        print("デザイン確認用のテスト通知を送信します...")
+        test_article = current_articles[0].copy()
+        test_article['title'] = "【デザイン確認】" + test_article['title']
+        send_line_carousel([test_article])
     
     history = load_history()
     history_urls = {item["url"] for item in history}
-    
-    current_articles = fetch_articles()
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
 
     if not new_articles:
         print("新規の更新はありません。")
-        return
-
-    new_count = len(new_articles)
-    
-    if new_count > MAX_NOTIFY_LIMIT:
-        print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限{MAX_NOTIFY_LIMIT}件超過）。")
-        print("LINE通知はスキップし、全件既読化（JSON保存）のみ行います。")
     else:
-        print(f"【通知対象】{new_count}件の新規更新が見つかりました。LINEへ通知します。")
-        # テスト用ダミーデータではなく、取得した本物の記事データを渡す
-        send_line_carousel(new_articles)
-    
+        new_count = len(new_articles)
+        if new_count > MAX_NOTIFY_LIMIT:
+            print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限超過）。LINE通知はスキップします。")
+        else:
+            print(f"【通知対象】{new_count}件の新規更新が見つかりました。（今回はテストコードのため本番通知は行いません）")
+            
     updated_history = history + new_articles
     save_history(updated_history)
     print("--- 監視処理終了 ---")
