@@ -33,7 +33,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（カルーセル Flex Message版）
+# LINE通知処理（ダークモード＆日付付き カルーセル）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -41,30 +41,38 @@ def send_line_carousel(articles):
         return
     
     bubbles = []
-    # 記事の数だけカード（バブル）を作成
     for article in articles:
         bubble = {
             "type": "bubble",
-            "size": "micro", # コンパクトなカードサイズ
+            "size": "micro",
             "body": {
                 "type": "box",
                 "layout": "vertical",
+                "backgroundColor": "#222222", # 背景をダークグレーに
                 "contents": [
                     {
                         "type": "text",
                         "text": article['section'],
                         "weight": "bold",
-                        "color": "#1DB446", # カテゴリ名は緑色
+                        "color": "#1DB446", # カテゴリ名はアクセントの緑
                         "size": "xs"
+                    },
+                    {
+                        "type": "text",
+                        "text": article.get('date', '日付不明'), # 取得した日付を表示
+                        "color": "#AAAAAA", # 日付は薄いグレー
+                        "size": "xxs",
+                        "margin": "sm"
                     },
                     {
                         "type": "text",
                         "text": article['title'],
                         "weight": "bold",
+                        "color": "#FFFFFF", # タイトルは白文字
                         "size": "sm",
                         "margin": "md",
                         "wrap": True,
-                        "maxLines": 3 # 長いタイトルは3行で省略
+                        "maxLines": 3
                     }
                 ]
             },
@@ -72,11 +80,12 @@ def send_line_carousel(articles):
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "sm",
+                "backgroundColor": "#222222", # フッターの背景も統一
                 "contents": [
                     {
                         "type": "button",
-                        "style": "primary",
-                        "color": "#0367D3", # ボタンは青色
+                        "style": "secondary", # セカンダリスタイルで落ち着いたボタンに
+                        "color": "#444444", 
                         "height": "sm",
                         "action": {
                             "type": "uri",
@@ -95,7 +104,6 @@ def send_line_carousel(articles):
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     
-    # Flex Messageの骨組みにカードリストをセット
     data = {
         "to": LINE_USER_ID,
         "messages": [
@@ -150,36 +158,42 @@ def fetch_articles():
                 if not a_tag:
                     continue
                 
+                # HTML構造から日付部分のタグを探して取得
+                date_tag = article.find("span", class_="elementor-post-date")
+                date_text = date_tag.get_text(strip=True) if date_tag else ""
+                
                 results.append({
                     "section": section_title,
+                    "date": date_text, # 日付データを追加
                     "title": a_tag.get_text(strip=True),
                     "url": a_tag.get("href")
                 })
     return results
 
 # ==========================================
-# メイン処理（カルーセル テストモード）
+# メイン処理（テストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（カルーセルテストモード） ---")
+    print("--- 監視処理開始（ダークデザインテストモード） ---")
     
-    # 🌟必ずテスト用カルーセルを送る🌟
-    print("LINEへのカルーセル通信テストを実行します...")
+    print("LINEへ新しいデザインのカルーセル通信テストを実行します...")
     dummy_articles = [
         {
             "section": "大会エントリー",
-            "title": "【テスト】平日大会2nd 第1戦エントリー開始",
+            "date": "2026年9月4日",
+            "title": "【テスト】全日本ジュニア・釣り女子・ファミリーエリアトラウト選手権大会",
             "url": "https://kingfisher-tochigi.com/"
         },
         {
             "section": "大会結果",
-            "title": "【テスト】第5戦 大会結果発表",
+            "date": "2026年8月18日",
+            "title": "【テスト】「平日大会1ST戦」大会結果",
             "url": "https://kingfisher-tochigi.com/"
         }
     ]
     send_line_carousel(dummy_articles)
     
-    # 以下、通常の差分チェック処理（エラーが出ないかどうかの確認用）
+    # 差分チェック処理（エラーチェック用）
     history = load_history()
     history_urls = {item["url"] for item in history}
     
