@@ -8,7 +8,7 @@ import os
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
+MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
@@ -16,9 +16,9 @@ TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "�
 
 # カテゴリごとの文字色設定
 CATEGORY_COLORS = {
-    "大会エントリー": "#FF4B4B",       # 赤
-    "大会エントリーリスト": "#0367D3", # 青
-    "大会結果": "#F4B400"              # 黄
+    "大会エントリー": "#FF4B4B",
+    "大会エントリーリスト": "#0367D3",
+    "大会結果": "#F4B400"
 }
 
 HEADERS = {
@@ -42,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理
+# LINE通知処理（本番用カルーセル）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -216,31 +216,16 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理
+# メイン処理（本番稼働）
 # ==========================================
 def main():
-    print("--- 監視処理開始 ---")
+    print("--- 監視処理開始（本番モード） ---")
     
     current_articles = fetch_articles()
-    
-    # 🌟【デザイン確認用】各セクションから1件ずつ抽出してテスト通知する🌟
-    print("デザイン確認用（3色）のテスト通知を送信します...")
-    test_articles = []
-    seen_sections = set()
-    for article in current_articles:
-        if article['section'] not in seen_sections:
-            test_article = article.copy()
-            test_article['title'] = f"【デザイン確認】{test_article['title']}"
-            test_articles.append(test_article)
-            seen_sections.add(article['section'])
-        if len(test_articles) == 3:
-            break
-            
-    if test_articles:
-        send_line_carousel(test_articles)
-    
     history = load_history()
     history_urls = {item["url"] for item in history}
+    
+    # 過去データに存在しないURLのみを抽出
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
 
     if not new_articles:
@@ -250,7 +235,8 @@ def main():
         if new_count > MAX_NOTIFY_LIMIT:
             print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限超過）。LINE通知はスキップします。")
         else:
-            print(f"【通知対象】{new_count}件の新規更新が見つかりました。（今回はテストコードのため本番通知は行いません）")
+            print(f"【通知対象】{new_count}件の新規更新が見つかりました。LINEへ通知します。")
+            send_line_carousel(new_articles)
             
     updated_history = history + new_articles
     save_history(updated_history)
