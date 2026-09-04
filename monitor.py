@@ -48,19 +48,19 @@ def send_line_carousel(articles):
             "body": {
                 "type": "box",
                 "layout": "vertical",
-                "backgroundColor": "#222222", # 背景をダークグレーに
+                "backgroundColor": "#222222",
                 "contents": [
                     {
                         "type": "text",
                         "text": article['section'],
                         "weight": "bold",
-                        "color": "#1DB446", # カテゴリ名はアクセントの緑
+                        "color": "#1DB446",
                         "size": "xs"
                     },
                     {
                         "type": "text",
-                        "text": article.get('date', '日付不明'), # 取得した日付を表示
-                        "color": "#AAAAAA", # 日付は薄いグレー
+                        "text": article.get('date', '日付不明'),
+                        "color": "#AAAAAA",
                         "size": "xxs",
                         "margin": "sm"
                     },
@@ -68,7 +68,7 @@ def send_line_carousel(articles):
                         "type": "text",
                         "text": article['title'],
                         "weight": "bold",
-                        "color": "#FFFFFF", # タイトルは白文字
+                        "color": "#FFFFFF",
                         "size": "sm",
                         "margin": "md",
                         "wrap": True,
@@ -80,17 +80,17 @@ def send_line_carousel(articles):
                 "type": "box",
                 "layout": "vertical",
                 "spacing": "sm",
-                "backgroundColor": "#222222", # フッターの背景も統一
+                "backgroundColor": "#222222",
                 "contents": [
                     {
                         "type": "button",
-                        "style": "secondary", # セカンダリスタイルで落ち着いたボタンに
-                        "color": "#444444", 
+                        "style": "primary", # primaryに変更し文字を白抜きに
+                        "color": "#555555", # ボタンの背景色をダークグレーに指定
                         "height": "sm",
                         "action": {
                             "type": "uri",
                             "label": "詳細を見る",
-                            "uri": article['url']
+                            "uri": article['url'] # 本物のURLがここに入ります
                         }
                     }
                 ]
@@ -158,42 +158,23 @@ def fetch_articles():
                 if not a_tag:
                     continue
                 
-                # HTML構造から日付部分のタグを探して取得
                 date_tag = article.find("span", class_="elementor-post-date")
                 date_text = date_tag.get_text(strip=True) if date_tag else ""
                 
                 results.append({
                     "section": section_title,
-                    "date": date_text, # 日付データを追加
+                    "date": date_text,
                     "title": a_tag.get_text(strip=True),
                     "url": a_tag.get("href")
                 })
     return results
 
 # ==========================================
-# メイン処理（テストモード）
+# メイン処理（本番モード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（ダークデザインテストモード） ---")
+    print("--- 監視処理開始（本番モード） ---")
     
-    print("LINEへ新しいデザインのカルーセル通信テストを実行します...")
-    dummy_articles = [
-        {
-            "section": "大会エントリー",
-            "date": "2026年9月4日",
-            "title": "【テスト】全日本ジュニア・釣り女子・ファミリーエリアトラウト選手権大会",
-            "url": "https://kingfisher-tochigi.com/"
-        },
-        {
-            "section": "大会結果",
-            "date": "2026年8月18日",
-            "title": "【テスト】「平日大会1ST戦」大会結果",
-            "url": "https://kingfisher-tochigi.com/"
-        }
-    ]
-    send_line_carousel(dummy_articles)
-    
-    # 差分チェック処理（エラーチェック用）
     history = load_history()
     history_urls = {item["url"] for item in history}
     
@@ -201,13 +182,18 @@ def main():
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
 
     if not new_articles:
-        print("新規の更新はありません（正常）。")
+        print("新規の更新はありません。")
+        return
+
+    new_count = len(new_articles)
+    
+    if new_count > MAX_NOTIFY_LIMIT:
+        print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限{MAX_NOTIFY_LIMIT}件超過）。")
+        print("LINE通知はスキップし、全件既読化（JSON保存）のみ行います。")
     else:
-        new_count = len(new_articles)
-        if new_count > MAX_NOTIFY_LIMIT:
-            print(f"【安全装置作動】{new_count}件の新規記事を検知しました。")
-        else:
-            print(f"{new_count}件の更新を検知しました。")
+        print(f"【通知対象】{new_count}件の新規更新が見つかりました。LINEへ通知します。")
+        # テスト用ダミーデータではなく、取得した本物の記事データを渡す
+        send_line_carousel(new_articles)
     
     updated_history = history + new_articles
     save_history(updated_history)
