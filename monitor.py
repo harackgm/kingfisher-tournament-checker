@@ -33,26 +33,87 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理
+# LINE通知処理（カルーセル Flex Message版）
 # ==========================================
-def send_line_message(message_text):
+def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
-        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が読み込めませんでした。Secretsの設定を確認してください。")
+        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
         return
     
+    bubbles = []
+    # 記事の数だけカード（バブル）を作成
+    for article in articles:
+        bubble = {
+            "type": "bubble",
+            "size": "micro", # コンパクトなカードサイズ
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": article['section'],
+                        "weight": "bold",
+                        "color": "#1DB446", # カテゴリ名は緑色
+                        "size": "xs"
+                    },
+                    {
+                        "type": "text",
+                        "text": article['title'],
+                        "weight": "bold",
+                        "size": "sm",
+                        "margin": "md",
+                        "wrap": True,
+                        "maxLines": 3 # 長いタイトルは3行で省略
+                    }
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": "#0367D3", # ボタンは青色
+                        "height": "sm",
+                        "action": {
+                            "type": "uri",
+                            "label": "詳細を見る",
+                            "uri": article['url']
+                        }
+                    }
+                ]
+            }
+        }
+        bubbles.append(bubble)
+
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
+    
+    # Flex Messageの骨組みにカードリストをセット
     data = {
         "to": LINE_USER_ID,
-        "messages": [{"type": "text", "text": message_text}]
+        "messages": [
+            {
+                "type": "flex",
+                "altText": "キングフィッシャーの最新情報が更新されました",
+                "contents": {
+                    "type": "carousel",
+                    "contents": bubbles
+                }
+            }
+        ]
     }
+    
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEにメッセージを送信しました！")
+        print("LINEにカルーセルメッセージを送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
         if response is not None:
@@ -97,16 +158,28 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（テストモード）
+# メイン処理（カルーセル テストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（LINEテストモード） ---")
+    print("--- 監視処理開始（カルーセルテストモード） ---")
     
-    # 🌟必ず1件テストメッセージを送る🌟
-    print("LINEへの通信テストを実行します...")
-    send_line_message("【テスト】LINE BOTへの通信が正常に完了しました！\nこのメッセージが届けばGitHub Secretsの設定は成功です。")
+    # 🌟必ずテスト用カルーセルを送る🌟
+    print("LINEへのカルーセル通信テストを実行します...")
+    dummy_articles = [
+        {
+            "section": "大会エントリー",
+            "title": "【テスト】平日大会2nd 第1戦エントリー開始",
+            "url": "https://kingfisher-tochigi.com/"
+        },
+        {
+            "section": "大会結果",
+            "title": "【テスト】第5戦 大会結果発表",
+            "url": "https://kingfisher-tochigi.com/"
+        }
+    ]
+    send_line_carousel(dummy_articles)
     
-    # 以降は通常の差分チェック処理（エラーが出ないかどうかの確認用）
+    # 以下、通常の差分チェック処理（エラーが出ないかどうかの確認用）
     history = load_history()
     history_urls = {item["url"] for item in history}
     
@@ -118,11 +191,10 @@ def main():
     else:
         new_count = len(new_articles)
         if new_count > MAX_NOTIFY_LIMIT:
-            print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限{MAX_NOTIFY_LIMIT}件超過）。")
+            print(f"【安全装置作動】{new_count}件の新規記事を検知しました。")
         else:
             print(f"{new_count}件の更新を検知しました。")
     
-    # 履歴を保存
     updated_history = history + new_articles
     save_history(updated_history)
     print("--- 監視処理終了 ---")
