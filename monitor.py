@@ -42,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（ロゴ拡大版）
+# LINE通知処理（サムネイル画像全体表示版）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -70,9 +70,9 @@ def send_line_carousel(articles):
                     {
                         "type": "image",
                         "url": LOGO_URL,
-                        "size": "full", # sm から full に変更し横幅いっぱいに
+                        "size": "full",
                         "aspectMode": "fit",
-                        "aspectRatio": "3:1", # ロゴの比率に合わせて高さを確保
+                        "aspectRatio": "3:1",
                         "align": "center"
                     }
                 ]
@@ -82,7 +82,8 @@ def send_line_carousel(articles):
                 "url": hero_image_url,
                 "size": "full",
                 "aspectRatio": "1.51:1",
-                "aspectMode": "cover"
+                "aspectMode": "fit", # cover から fit に変更し、見切れを防止
+                "backgroundColor": "#000000" # 隙間ができた場合の背景を黒に指定
             },
             "body": {
                 "type": "box",
