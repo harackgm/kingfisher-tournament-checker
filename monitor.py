@@ -42,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（サムネイル画像追加・megaサイズ版）
+# LINE通知処理（ロゴ拡大版）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -53,24 +53,27 @@ def send_line_carousel(articles):
     for article in articles:
         section_color = CATEGORY_COLORS.get(article['section'], "#1DB446")
         
-        # 記事に画像がない場合はロゴ画像をフォールバックとして使用
         hero_image_url = article.get('img_url') if article.get('img_url') else LOGO_URL
         
         bubble = {
             "type": "bubble",
-            "size": "mega", # kiloからmegaへ拡大
+            "size": "mega",
             "header": {
                 "type": "box",
                 "layout": "vertical",
                 "backgroundColor": "#000000",
-                "paddingAll": "10px",
+                "paddingTop": "15px",
+                "paddingBottom": "10px",
+                "paddingStart": "15px",
+                "paddingEnd": "15px",
                 "contents": [
                     {
                         "type": "image",
                         "url": LOGO_URL,
-                        "size": "sm", # ロゴはヘッダーに小さく配置
+                        "size": "full", # sm から full に変更し横幅いっぱいに
                         "aspectMode": "fit",
-                        "align": "start"
+                        "aspectRatio": "3:1", # ロゴの比率に合わせて高さを確保
+                        "align": "center"
                     }
                 ]
             },
@@ -78,7 +81,7 @@ def send_line_carousel(articles):
                 "type": "image",
                 "url": hero_image_url,
                 "size": "full",
-                "aspectRatio": "1.51:1", # サムネイル画像を綺麗に見せる比率
+                "aspectRatio": "1.51:1",
                 "aspectMode": "cover"
             },
             "body": {
@@ -197,7 +200,6 @@ def fetch_articles():
                 date_tag = article.find("span", class_="elementor-post-date")
                 date_text = date_tag.get_text(strip=True) if date_tag else ""
                 
-                # サムネイル画像のURLを取得 (data-src または src 属性)
                 img_tag = article.find("img")
                 img_url = ""
                 if img_tag:
@@ -208,7 +210,7 @@ def fetch_articles():
                     "date": date_text,
                     "title": a_tag.get_text(strip=True),
                     "url": a_tag.get("href"),
-                    "img_url": img_url # 画像URLを辞書に追加
+                    "img_url": img_url
                 })
     return results
 
@@ -220,10 +222,9 @@ def main():
     
     current_articles = fetch_articles()
     
-    # 🌟【デザイン確認用】取得した実際の記事データから3件をテスト通知する🌟
+    # 🌟【デザイン確認用】取得した実際の記事データからテスト通知する🌟
     if len(current_articles) >= 3:
         print("デザイン確認用のテスト通知を送信します...")
-        # 各セクションから1件ずつピックアップして表示をテスト
         test_articles = current_articles[:3]
         for i, article in enumerate(test_articles):
             article['title'] = f"【デザイン確認】{article['title']}"
