@@ -10,6 +10,9 @@ TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
 MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
 
+# GitHubにアップロードしたロゴ画像のRaw URL
+LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
+
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
@@ -32,7 +35,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（ダークモード＆白文字ボタン）
+# LINE通知処理（ロゴ画像追加・セル拡大版）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -43,7 +46,15 @@ def send_line_carousel(articles):
     for article in articles:
         bubble = {
             "type": "bubble",
-            "size": "micro",
+            "size": "kilo", # micro から kilo に拡大
+            "hero": {
+                "type": "image",
+                "url": LOGO_URL,
+                "size": "full",
+                "aspectRatio": "3:1", # ロゴの比率に合わせた横長設定
+                "aspectMode": "fit",  # 見切れないように全体を表示
+                "backgroundColor": "#000000" # 背景を黒に
+            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
@@ -54,13 +65,13 @@ def send_line_carousel(articles):
                         "text": article['section'],
                         "weight": "bold",
                         "color": "#1DB446",
-                        "size": "xs"
+                        "size": "sm" # セル拡大に合わせて文字も少し大きく
                     },
                     {
                         "type": "text",
                         "text": article.get('date', '日付不明'),
                         "color": "#AAAAAA",
-                        "size": "xxs",
+                        "size": "xs",
                         "margin": "sm"
                     },
                     {
@@ -68,7 +79,7 @@ def send_line_carousel(articles):
                         "text": article['title'],
                         "weight": "bold",
                         "color": "#FFFFFF",
-                        "size": "sm",
+                        "size": "md", # タイトルも少し大きく
                         "margin": "md",
                         "wrap": True,
                         "maxLines": 3
@@ -83,13 +94,13 @@ def send_line_carousel(articles):
                 "contents": [
                     {
                         "type": "button",
-                        "style": "primary", # primaryで文字を白に
-                        "color": "#555555", # ボタン背景をダークグレーに
+                        "style": "primary",
+                        "color": "#555555",
                         "height": "sm",
                         "action": {
                             "type": "uri",
                             "label": "詳細を見る",
-                            "uri": article['url'] # 本物のURL
+                            "uri": article['url']
                         }
                     }
                 ]
