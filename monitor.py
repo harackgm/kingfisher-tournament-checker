@@ -13,6 +13,8 @@ HISTORY_FILE = "history.json"
 MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
+POKO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/poko.png"
+
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
 CATEGORY_COLORS = {
@@ -51,7 +53,6 @@ def get_tomorrow_weather():
     weather_text = "確認できませんでした"
     wind_text = "-"
     
-    # ① 気象庁APIから天気と風向テキストを取得
     try:
         url_jma = "https://www.jma.go.jp/bosai/forecast/data/forecast/090000.json"
         res_jma = requests.get(url_jma, timeout=10).json()
@@ -66,22 +67,18 @@ def get_tomorrow_weather():
     except Exception as e:
         print(f"気象庁APIエラー: {e}")
         
-    # ② Open-Meteo APIから大田原市の気温と最大風速を取得（キー不要）
     temp_max = "-"
     temp_min = "-"
     wind_speed = "-"
     try:
-        # 大田原市周辺の緯度経度を指定、風速をm/sで取得
         url_om = "https://api.open-meteo.com/v1/forecast?latitude=36.87&longitude=140.01&daily=temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia%2FTokyo&wind_speed_unit=ms"
         res_om = requests.get(url_om, timeout=10).json()
-        # インデックス1が明日
         temp_max = round(res_om["daily"]["temperature_2m_max"][1])
         temp_min = round(res_om["daily"]["temperature_2m_min"][1])
         wind_speed = round(res_om["daily"]["windspeed_10m_max"][1], 1)
     except Exception as e:
         print(f"Open-Meteo APIエラー: {e}")
 
-    # メッセージの組み立て
     msg = f"🌤️ 【天気】{weather_text}\n"
     msg += f"🌡️ 【気温】最高 {temp_max}℃ / 最低 {temp_min}℃\n"
     msg += f"🍃 【風向】{wind_text}\n"
@@ -89,7 +86,7 @@ def get_tomorrow_weather():
     return msg
 
 # ==========================================
-# LINE通知処理（二重ロゴ回避版）
+# LINE通知処理
 # ==========================================
 def send_line_carousel(notify_items):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -112,6 +109,11 @@ def send_line_carousel(notify_items):
             badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
             badge_text = item['section']
             header_color = "#000000"
+            
+        # 記事に画像がない場合はぽこちゃん（poko.png）をフォールバックとして使用
+        hero_image_url = item.get('img_url')
+        if not hero_image_url:
+            hero_image_url = POKO_URL
             
         body_contents = [
             {
@@ -193,6 +195,14 @@ def send_line_carousel(notify_items):
                     }
                 ]
             },
+            "hero": {
+                "type": "image",
+                "url": hero_image_url,
+                "size": "full",
+                "aspectRatio": "1.51:1",
+                "aspectMode": "fit",
+                "backgroundColor": "#000000"
+            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
@@ -219,18 +229,6 @@ def send_line_carousel(notify_items):
                 ]
             }
         }
-        
-        # 記事固有の画像URLが存在する場合のみ、heroブロック（メイン画像）を追加する
-        if item.get('img_url'):
-            bubble["hero"] = {
-                "type": "image",
-                "url": item['img_url'],
-                "size": "full",
-                "aspectRatio": "1.51:1",
-                "aspectMode": "fit",
-                "backgroundColor": "#000000"
-            }
-            
         bubbles.append(bubble)
 
     url = "https://api.line.me/v2/bot/message/push"
@@ -312,37 +310,36 @@ def main():
     print("--- 監視処理開始（新機能デザインテスト） ---")
     
     weather = get_tomorrow_weather()
+    current_articles = fetch_articles()
     
-    # 🌟強制的にダミーデータを送ってデザインを確認する🌟
-    # 今回は img_url を設定しないため、二重ロゴは発生せずヘッダーのみになります。
-    dummy_articles = [
-        {
-            "section": "大会エントリーリスト",
-            "notify_type": "remind",
-            "date": "2026年9月6日",
-            "title": "【テスト】「全日本ジュニア・釣り女子・ファミリーエリアトラウト選手権大会」エントリーリスト",
-            "url": "https://kingfisher-tochigi.com/",
-            "remind_msg": f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-        },
-        {
-            "section": "大会エントリーリスト",
-            "notify_type": "remind",
-            "date": "2026年9月6日",
-            "title": "【テスト】WEEKDAY TROUT Tournament 2026 2nd season 第2戦 エントリーリスト",
-            "url": "https://kingfisher-tochigi.com/",
-            "remind_msg": f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-        },
-        {
-            "section": "大会エントリー",
-            "notify_type": "alert",
-            "date": "2026年9月6日",
-            "title": "【中止】9月13日開催 シリーズ第5戦",
-            "url": "https://kingfisher-tochigi.com/"
-        }
-    ]
-    
-    send_line_carousel(dummy_articles)
-    
+    # 🌟本物のURLを使ったテスト通知🌟
+    dummy_articles = []
+    if len(current_articles) >= 3:
+        # 1件目: リマインドのテスト（本物のURLと画像を維持）
+        a1 = current_articles[0].copy()
+        a1["notify_type"] = "remind"
+        a1["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+        a1["title"] = "【テスト: 明日開催】" + a1["title"]
+        dummy_articles.append(a1)
+        
+        # 2件目: アラートのテスト（本物のURLと画像を維持）
+        a2 = current_articles[1].copy()
+        a2["notify_type"] = "alert"
+        a2["title"] = "【テスト: 中止・延期】" + a2["title"]
+        dummy_articles.append(a2)
+        
+        # 3件目: 通常更新のテスト（本物のURLと画像を維持）
+        a3 = current_articles[2].copy()
+        a3["title"] = "【テスト: 通常更新】" + a3["title"]
+        # 強制的にぽこちゃんの動作を確認するため、画像URLを消去
+        a3["img_url"] = "" 
+        dummy_articles.append(a3)
+        
+        print("本物のURLを使用したテスト通知を送信します...")
+        send_line_carousel(dummy_articles)
+    else:
+        print("テスト用の記事が十分に取得できませんでした。")
+        
     print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
 
