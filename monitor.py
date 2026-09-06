@@ -238,13 +238,12 @@ def send_line_carousel(notify_items):
             
         bubbles.append(bubble)
 
-    # 🌟一斉送信（Broadcast）用のAPIに指定🌟
+    # 🌟一斉送信（Broadcast）
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
-    # 🌟特定の宛先（to）がないため、登録者全員に一斉配信されます🌟
     data = {
         "messages": [
             {
@@ -335,11 +334,15 @@ def main():
             history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
         else:
             past_article = history_dict[url]
-            # ② タイトル変更（中止・延期）の検知
+            # ② タイトル変更（中止・延期・キャンセル待ち）の検知
             if past_article.get("title") != title:
                 if "中止" in title or "延期" in title:
                     article_copy = article.copy()
                     article_copy["notify_type"] = "alert"
+                    notify_list.append(article_copy)
+                elif "キャンセル待ち" in title and "キャンセル待ち" not in past_article.get("title"):
+                    article_copy = article.copy()
+                    article_copy["notify_type"] = "new" # 通常更新としてキャンセル待ちを通知
                     notify_list.append(article_copy)
                 past_article["title"] = title
         
