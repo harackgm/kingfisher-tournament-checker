@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
+MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 POKO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/poko.png"
@@ -172,7 +172,7 @@ def send_line_carousel(notify_items):
             body_contents.append({
                 "type": "text",
                 "text": item["remind_msg"],
-                "color": "#FFE600", # 🌟 明るい黄色に色を変更
+                "color": "#FFE600",
                 "size": "xs",
                 "margin": "md",
                 "wrap": True
@@ -312,41 +312,64 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（テストモード）
+# メイン処理（本番稼働用）
 # ==========================================
 def main():
-    print("--- 監視処理開始（新機能デザインテスト） ---")
+    print("--- 監視処理開始（本番モード） ---")
     
-    weather = get_tomorrow_weather()
     current_articles = fetch_articles()
+    history = load_history()
     
-    dummy_articles = []
-    if len(current_articles) >= 3:
-        # 1件目: リマインドのテスト（ぽこちゃんが表示される）
-        a1 = current_articles[0].copy()
-        a1["notify_type"] = "remind"
-        a1["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-        a1["title"] = "【テスト: 明日開催】" + a1["title"]
-        dummy_articles.append(a1)
+    history_dict = {item["url"]: item for item in history}
+    notify_list = []
+
+    for article in current_articles:
+        url = article["url"]
+        title = article["title"]
         
-        # 2件目: アラートのテスト（実際の画像があれば表示される）
-        a2 = current_articles[1].copy()
-        a2["notify_type"] = "alert"
-        a2["title"] = "【テスト: 中止・延期】" + a2["title"]
-        dummy_articles.append(a2)
+        # ① 完全新規の検知
+        if url not in history_dict:
+            article_copy = article.copy()
+            article_copy["notify_type"] = "new"
+            notify_list.append(article_copy)
+            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
+        else:
+            past_article = history_dict[url]
+            # ② タイトル変更（中止・延期）の検知
+            if past_article.get("title") != title:
+                if "中止" in title or "延期" in title:
+                    article_copy = article.copy()
+                    article_copy["notify_type"] = "alert"
+                    notify_list.append(article_copy)
+                past_article["title"] = title
         
-        # 3件目: 通常更新のテスト（強制的に画像を消し、二重ロゴにならないことを確認）
-        a3 = current_articles[2].copy()
-        a3["title"] = "【テスト: 通常更新】" + a3["title"]
-        a3["img_url"] = "" 
-        dummy_articles.append(a3)
-        
-        print("テスト通知を送信します...")
-        send_line_carousel(dummy_articles)
+        # ③ 明日開催の自動検知＆リマインド
+        past_article = history_dict[url]
+        if not past_article.get("reminded", False):
+            match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
+            if match:
+                m = int(match.group(1))
+                d = int(match.group(2))
+                if m == TOMORROW.month and d == TOMORROW.day:
+                    article_copy = article.copy()
+                    article_copy["notify_type"] = "remind"
+                    weather = get_tomorrow_weather()
+                    article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+                    notify_list.append(article_copy)
+                    past_article["reminded"] = True
+
+    if not notify_list:
+        print("新規更新、日程変更、前日リマインドはありません。")
     else:
-        print("テスト用の記事が十分に取得できませんでした。")
-        
-    print("--- テスト実行のため、history.jsonの更新は行いません ---")
+        new_count = len(notify_list)
+        if new_count > MAX_NOTIFY_LIMIT:
+            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
+        else:
+            print(f"【通知送信】{new_count}件の情報をLINEへ送信します。")
+            send_line_carousel(notify_list)
+            
+    updated_history = list(history_dict.values())
+    save_history(updated_history)
     print("--- 監視処理終了 ---")
 
 if __name__ == "__main__":
