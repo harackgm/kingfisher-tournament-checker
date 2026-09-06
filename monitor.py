@@ -47,7 +47,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# 大田原市の詳細な明日の天気取得（気象庁＋Open-Meteo併用）
+# 大田原市の詳細な明日の天気取得
 # ==========================================
 def get_tomorrow_weather():
     weather_text = "確認できませんでした"
@@ -110,19 +110,15 @@ def send_line_carousel(notify_items):
             badge_text = item['section']
             header_color = "#000000"
             
-        # --- 画像の表示ロジック ---
         show_hero = False
         hero_image_url = ""
         
         if notify_type == "remind":
-            # 前日リマインドの時は必ず「ぽこちゃん」を表示
             hero_image_url = POKO_URL
             show_hero = True
         elif item.get('img_url'):
-            # それ以外は記事に画像があればそれを表示
             hero_image_url = item['img_url']
             show_hero = True
-        # 上記以外（画像がない通常更新）は show_hero = False となり枠ごと消える
             
         body_contents = [
             {
@@ -176,7 +172,7 @@ def send_line_carousel(notify_items):
             body_contents.append({
                 "type": "text",
                 "text": item["remind_msg"],
-                "color": "#F4B400",
+                "color": "#FFE600", # 🌟 明るい黄色に色を変更
                 "size": "xs",
                 "margin": "md",
                 "wrap": True
@@ -231,7 +227,6 @@ def send_line_carousel(notify_items):
             }
         }
         
-        # 表示する画像がある場合のみ hero ブロックを追加
         if show_hero:
             bubble["hero"] = {
                 "type": "image",
@@ -325,7 +320,6 @@ def main():
     weather = get_tomorrow_weather()
     current_articles = fetch_articles()
     
-    # 🌟本物のURLを使ったテスト通知🌟
     dummy_articles = []
     if len(current_articles) >= 3:
         # 1件目: リマインドのテスト（ぽこちゃんが表示される）
