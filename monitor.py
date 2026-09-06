@@ -14,6 +14,8 @@ MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 POKO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/poko.png"
+# 🌟 キャンセル待ち専用画像を登録
+POKOCAN_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokocan.jpg"
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
@@ -28,6 +30,8 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
+# 🌟 テスト確認のため、一時的にUSER_IDを復活
+LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 JST = timezone(timedelta(hours=9), 'JST')
 TOMORROW = datetime.now(JST) + timedelta(days=1)
@@ -85,11 +89,11 @@ def get_tomorrow_weather():
     return msg
 
 # ==========================================
-# LINE通知処理（全員への一斉送信版）
+# LINE通知処理（テスト用 Push通知）
 # ==========================================
 def send_line_carousel(notify_items):
-    if not LINE_ACCESS_TOKEN:
-        print("エラー: LINE_ACCESS_TOKEN が設定されていません。")
+    if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
+        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
         return
     
     bubbles = []
@@ -104,6 +108,11 @@ def send_line_carousel(notify_items):
             badge_color = "#FF8C00"
             badge_text = "📣明日開催！"
             header_color = "#222222"
+        # 🌟 キャンセル待ちの場合は通常と同じ色・テキスト（イラストでアピール）
+        elif notify_type == "cancel_wait":
+            badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
+            badge_text = item['section']
+            header_color = "#000000"
         else:
             badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
             badge_text = item['section']
@@ -112,8 +121,12 @@ def send_line_carousel(notify_items):
         show_hero = False
         hero_image_url = ""
         
+        # 🌟 画像の出し分けロジック
         if notify_type == "remind":
             hero_image_url = POKO_URL
+            show_hero = True
+        elif notify_type == "cancel_wait":
+            hero_image_url = POKOCAN_URL # キャン待ちイラストを指定
             show_hero = True
         elif item.get('img_url'):
             hero_image_url = item['img_url']
@@ -238,13 +251,14 @@ def send_line_carousel(notify_items):
             
         bubbles.append(bubble)
 
-    # 🌟一斉送信（Broadcast）
-    url = "https://api.line.me/v2/bot/message/broadcast"
+    # 🌟テスト用にPush通知（個人宛て）に設定🌟
+    url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     data = {
+        "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
@@ -260,7 +274,7 @@ def send_line_carousel(notify_items):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEに一斉送信メッセージを送信しました！")
+        print("LINEにテストメッセージを送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
@@ -311,68 +325,34 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（公開本番用）
+# メイン処理（テストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（公開本番モード） ---")
+    print("--- 監視処理開始（新イラストテスト） ---")
     
-    current_articles = fetch_articles()
-    history = load_history()
+    # 🌟強制的にダミーデータを送ってデザインを確認する🌟
+    dummy_articles = [
+        {
+            "section": "大会エントリー",
+            "notify_type": "cancel_wait", # 🌟 キャンセル待ちをシミュレート
+            "date": "2026年9月6日",
+            "title": "【テスト】現在キャンセル待ち：11月8日（日）開催！ 全日本ジュニア・釣り女子・ファミリーエリアトラウト選手権大会",
+            "url": "https://kingfisher-tochigi.com/"
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "remind",
+            "date": "2026年9月6日",
+            "title": "【テスト】明日開催！ 全日本ジュニア・釣り女子・ファミリーエリアトラウト選手権大会",
+            "url": "https://kingfisher-tochigi.com/",
+            "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】晴れ\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+        }
+    ]
     
-    history_dict = {item["url"]: item for item in history}
-    notify_list = []
-
-    for article in current_articles:
-        url = article["url"]
-        title = article["title"]
-        
-        # ① 完全新規の検知
-        if url not in history_dict:
-            article_copy = article.copy()
-            article_copy["notify_type"] = "new"
-            notify_list.append(article_copy)
-            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
-        else:
-            past_article = history_dict[url]
-            # ② タイトル変更（中止・延期・キャンセル待ち）の検知
-            if past_article.get("title") != title:
-                if "中止" in title or "延期" in title:
-                    article_copy = article.copy()
-                    article_copy["notify_type"] = "alert"
-                    notify_list.append(article_copy)
-                elif "キャンセル待ち" in title and "キャンセル待ち" not in past_article.get("title"):
-                    article_copy = article.copy()
-                    article_copy["notify_type"] = "new" # 通常更新としてキャンセル待ちを通知
-                    notify_list.append(article_copy)
-                past_article["title"] = title
-        
-        # ③ 明日開催の自動検知＆リマインド
-        past_article = history_dict[url]
-        if not past_article.get("reminded", False):
-            match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
-            if match:
-                m = int(match.group(1))
-                d = int(match.group(2))
-                if m == TOMORROW.month and d == TOMORROW.day:
-                    article_copy = article.copy()
-                    article_copy["notify_type"] = "remind"
-                    weather = get_tomorrow_weather()
-                    article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-                    notify_list.append(article_copy)
-                    past_article["reminded"] = True
-
-    if not notify_list:
-        print("新規更新、日程変更、前日リマインドはありません。")
-    else:
-        new_count = len(notify_list)
-        if new_count > MAX_NOTIFY_LIMIT:
-            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
-        else:
-            print(f"【通知送信】{new_count}件の情報をLINEの登録者全員へ一斉送信します。")
-            send_line_carousel(notify_list)
-            
-    updated_history = list(history_dict.values())
-    save_history(updated_history)
+    print("キャンセル待ちイラストのテスト通知を送信します...")
+    send_line_carousel(dummy_articles)
+    
+    print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
 
 if __name__ == "__main__":
