@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
+MAX_NOTIFY_LIMIT = 5
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
@@ -28,22 +28,8 @@ HEADERS = {
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
-# 日本時間の「明日」を取得
 JST = timezone(timedelta(hours=9), 'JST')
 TOMORROW = datetime.now(JST) + timedelta(days=1)
-
-# ==========================================
-# データ管理処理
-# ==========================================
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-def save_history(history_list):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
 # 気象庁APIからの天気取得（栃木県北部）
@@ -56,7 +42,6 @@ def get_tomorrow_weather():
         for area in data[0]["timeSeries"][0]["areas"]:
             if area["area"]["name"] == "北部":
                 weathers = area["weathers"]
-                # 簡易的に明日の天気を取得（インデックス1付近）
                 if len(weathers) > 1:
                     return weathers[1].replace(" ", " ")
                 else:
@@ -93,7 +78,7 @@ def send_line_carousel(notify_items):
             
         hero_image_url = item.get('img_url') if item.get('img_url') else LOGO_URL
         
-        # 本文の組み立て（リマインドの場合は天気と応援メッセージを追加）
+        # 本文の組み立て
         body_contents = [
             {
                 "type": "box",
@@ -142,6 +127,7 @@ def send_line_carousel(notify_items):
             }
         ]
         
+        # リマインドの場合は天気と応援メッセージを追加
         if notify_type == "remind" and "remind_msg" in item:
             body_contents.append({
                 "type": "text",
@@ -237,117 +223,46 @@ def send_line_carousel(notify_items):
         print(f"LINE通知エラー: {e}")
 
 # ==========================================
-# スクレイピング処理
-# ==========================================
-def fetch_articles():
-    try:
-        response = requests.get(TARGET_URL, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-    except Exception as e:
-        print(f"取得エラー: {e}")
-        return []
-
-    soup = BeautifulSoup(response.content, "html.parser")
-    results = []
-
-    for h1 in soup.find_all("h1", class_="elementor-heading-title"):
-        section_title = h1.get_text(strip=True)
-        if section_title in TARGET_SECTIONS:
-            posts_container = h1.find_next("div", class_="elementor-posts-container")
-            if not posts_container:
-                continue
-            
-            articles = posts_container.find_all("article", class_="elementor-post")
-            for article in articles:
-                title_tag = article.find("h6", class_="elementor-post__title")
-                if not title_tag:
-                    continue
-                
-                a_tag = title_tag.find("a")
-                if not a_tag:
-                    continue
-                
-                date_tag = article.find("span", class_="elementor-post-date")
-                date_text = date_tag.get_text(strip=True) if date_tag else ""
-                
-                img_tag = article.find("img")
-                img_url = img_tag.get("data-src") or img_tag.get("src", "") if img_tag else ""
-                
-                results.append({
-                    "section": section_title,
-                    "date": date_text,
-                    "title": a_tag.get_text(strip=True),
-                    "url": a_tag.get("href"),
-                    "img_url": img_url
-                })
-    return results
-
-# ==========================================
-# メイン処理（スマート検知搭載）
+# メイン処理（新機能デザインテスト用）
 # ==========================================
 def main():
-    print("--- 監視処理開始 ---")
+    print("--- 監視処理開始（新機能デザインテスト） ---")
     
-    current_articles = fetch_articles()
-    history = load_history()
+    weather = get_tomorrow_weather()
     
-    # 履歴をURLキーの辞書に変換して扱いやすくする
-    history_dict = {item["url"]: item for item in history}
-    notify_list = []
-
-    for article in current_articles:
-        url = article["url"]
-        title = article["title"]
-        
-        # ① 完全新規の検知
-        if url not in history_dict:
-            article_copy = article.copy()
-            article_copy["notify_type"] = "new"
-            notify_list.append(article_copy)
-            # 履歴に追加（前日通知フラグを初期化）
-            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
-        else:
-            past_article = history_dict[url]
-            # ② タイトル変更（中止・延期）の検知
-            if past_article.get("title") != title:
-                if "中止" in title or "延期" in title:
-                    article_copy = article.copy()
-                    article_copy["notify_type"] = "alert"
-                    notify_list.append(article_copy)
-                past_article["title"] = title
-        
-        # ③ 明日開催の自動検知＆リマインド
-        past_article = history_dict[url]
-        if not past_article.get("reminded", False):
-            # タイトルから「○月○日」を抽出
-            match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
-            if match:
-                m = int(match.group(1))
-                d = int(match.group(2))
-                # 日本時間の明日と一致するか確認
-                if m == TOMORROW.month and d == TOMORROW.day:
-                    article_copy = article.copy()
-                    article_copy["notify_type"] = "remind"
-                    weather = get_tomorrow_weather()
-                    article_copy["remind_msg"] = f"明日の天気（栃木北部）: {weather}\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-                    notify_list.append(article_copy)
-                    # 通知済みフラグを立てて二重送信を防止
-                    past_article["reminded"] = True
-
-    # 通知対象がある場合
-    if not notify_list:
-        print("新規更新、日程変更、前日リマインドはありません。")
-    else:
-        new_count = len(notify_list)
-        if new_count > MAX_NOTIFY_LIMIT:
-            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
-        else:
-            print(f"【通知送信】{new_count}件の情報をLINEへ送信します。")
-            send_line_carousel(notify_list)
-            
-    # 履歴をリストに戻して保存
-    updated_history = list(history_dict.values())
-    save_history(updated_history)
+    # 🌟強制的にダミーデータを送ってデザインを確認する🌟
+    dummy_articles = [
+        {
+            "section": "大会エントリーリスト",
+            "notify_type": "remind",
+            "date": "2026年9月6日",
+            "title": "【テスト】「全日本ジュニア・釣り女子・ファミリーエリアトラウト選手権大会」エントリーリスト",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": LOGO_URL,
+            "remind_msg": f"明日の天気（栃木北部）: {weather}\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+        },
+        {
+            "section": "大会エントリーリスト",
+            "notify_type": "remind",
+            "date": "2026年9月6日",
+            "title": "【テスト】WEEKDAY TROUT Tournament 2026 2nd season 第2戦 エントリーリスト",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": LOGO_URL,
+            "remind_msg": f"明日の天気（栃木北部）: {weather}\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "alert",
+            "date": "2026年9月6日",
+            "title": "【中止】9月13日開催 シリーズ第5戦",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": LOGO_URL
+        }
+    ]
+    
+    send_line_carousel(dummy_articles)
+    
+    print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
 
 if __name__ == "__main__":
