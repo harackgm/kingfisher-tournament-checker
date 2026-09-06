@@ -28,7 +28,6 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
-LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 JST = timezone(timedelta(hours=9), 'JST')
 TOMORROW = datetime.now(JST) + timedelta(days=1)
@@ -86,11 +85,11 @@ def get_tomorrow_weather():
     return msg
 
 # ==========================================
-# LINE通知処理
+# LINE通知処理（全員への一斉送信版）
 # ==========================================
 def send_line_carousel(notify_items):
-    if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
-        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
+    if not LINE_ACCESS_TOKEN:
+        print("エラー: LINE_ACCESS_TOKEN が設定されていません。")
         return
     
     bubbles = []
@@ -239,13 +238,14 @@ def send_line_carousel(notify_items):
             
         bubbles.append(bubble)
 
-    url = "https://api.line.me/v2/bot/message/push"
+    # 🌟一斉送信（Broadcast）用のURLに変更🌟
+    url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
+    # 🌟宛先（to）の指定を削除🌟
     data = {
-        "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
@@ -261,7 +261,7 @@ def send_line_carousel(notify_items):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEにメッセージを送信しました！")
+        print("LINEに一斉送信メッセージを送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
@@ -312,10 +312,10 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（本番稼働用）
+# メイン処理（公開本番用）
 # ==========================================
 def main():
-    print("--- 監視処理開始（本番モード） ---")
+    print("--- 監視処理開始（公開本番モード） ---")
     
     current_articles = fetch_articles()
     history = load_history()
@@ -365,7 +365,7 @@ def main():
         if new_count > MAX_NOTIFY_LIMIT:
             print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
         else:
-            print(f"【通知送信】{new_count}件の情報をLINEへ送信します。")
+            print(f"【通知送信】{new_count}件の情報をLINEの登録者全員へ一斉送信します。")
             send_line_carousel(notify_list)
             
     updated_history = list(history_dict.values())
