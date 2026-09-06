@@ -238,13 +238,13 @@ def send_line_carousel(notify_items):
             
         bubbles.append(bubble)
 
-    # 🌟一斉送信（Broadcast）用のURLに変更🌟
+    # 🌟一斉送信（Broadcast）用のAPIに指定🌟
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
-    # 🌟宛先（to）の指定を削除🌟
+    # 🌟特定の宛先（to）がないため、登録者全員に一斉配信されます🌟
     data = {
         "messages": [
             {
