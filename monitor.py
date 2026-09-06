@@ -2,6 +2,8 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import os
+import re
+from datetime import datetime, timedelta, timezone
 
 # ==========================================
 # 設定値
@@ -11,14 +13,12 @@ HISTORY_FILE = "history.json"
 MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
-
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
-# カテゴリごとの背景色設定（バッジ用）
 CATEGORY_COLORS = {
-    "大会エントリー": "#FF4B4B",       # 赤
-    "大会エントリーリスト": "#0367D3", # 青
-    "大会結果": "#F4B400"              # 黄
+    "大会エントリー": "#FF4B4B",
+    "大会エントリーリスト": "#0367D3",
+    "大会結果": "#F4B400"
 }
 
 HEADERS = {
@@ -27,6 +27,10 @@ HEADERS = {
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
+
+# 日本時間の「明日」を取得
+JST = timezone(timedelta(hours=9), 'JST')
+TOMORROW = datetime.now(JST) + timedelta(days=1)
 
 # ==========================================
 # データ管理処理
@@ -42,27 +46,119 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（カテゴリのバッジ化）
+# 気象庁APIからの天気取得（栃木県北部）
 # ==========================================
-def send_line_carousel(articles):
+def get_tomorrow_weather():
+    try:
+        url = "https://www.jma.go.jp/bosai/forecast/data/forecast/090000.json"
+        res = requests.get(url, timeout=10)
+        data = res.json()
+        for area in data[0]["timeSeries"][0]["areas"]:
+            if area["area"]["name"] == "北部":
+                weathers = area["weathers"]
+                # 簡易的に明日の天気を取得（インデックス1付近）
+                if len(weathers) > 1:
+                    return weathers[1].replace(" ", " ")
+                else:
+                    return weathers[0].replace(" ", " ")
+        return "確認できませんでした"
+    except Exception:
+        return "確認できませんでした"
+
+# ==========================================
+# LINE通知処理（種別ごとのデザイン出し分け）
+# ==========================================
+def send_line_carousel(notify_items):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
         print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
         return
     
     bubbles = []
-    for article in articles:
-        # カテゴリに応じた色を取得
-        section_color = CATEGORY_COLORS.get(article['section'], "#1DB446")
+    for item in notify_items:
+        notify_type = item.get("notify_type", "new")
         
-        hero_image_url = article.get('img_url') if article.get('img_url') else LOGO_URL
+        # 通知の種類によってバッジの色と文字を変更
+        if notify_type == "alert":
+            badge_color = "#FF0000" # 緊急の赤
+            badge_text = "⚠️中止・延期のお知らせ"
+            header_color = "#4A0000"
+        elif notify_type == "remind":
+            badge_color = "#FF8C00" # リマインドのオレンジ
+            badge_text = "📣明日開催！"
+            header_color = "#222222"
+        else:
+            badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
+            badge_text = item['section']
+            header_color = "#000000"
+            
+        hero_image_url = item.get('img_url') if item.get('img_url') else LOGO_URL
         
+        # 本文の組み立て（リマインドの場合は天気と応援メッセージを追加）
+        body_contents = [
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "margin": "none",
+                "contents": [
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "backgroundColor": badge_color,
+                        "cornerRadius": "md",
+                        "paddingTop": "4px",
+                        "paddingBottom": "4px",
+                        "paddingStart": "10px",
+                        "paddingEnd": "10px",
+                        "flex": 0,
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": badge_text,
+                                "weight": "bold",
+                                "color": "#FFFFFF",
+                                "size": "sm",
+                                "align": "center"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "text",
+                "text": item.get('date', '日付不明'),
+                "color": "#AAAAAA",
+                "size": "xs",
+                "margin": "md"
+            },
+            {
+                "type": "text",
+                "text": item['title'],
+                "weight": "bold",
+                "color": "#FFFFFF",
+                "size": "md",
+                "margin": "md",
+                "wrap": True,
+                "maxLines": 3
+            }
+        ]
+        
+        if notify_type == "remind" and "remind_msg" in item:
+            body_contents.append({
+                "type": "text",
+                "text": item["remind_msg"],
+                "color": "#F4B400",
+                "size": "sm",
+                "margin": "md",
+                "wrap": True
+            })
+
         bubble = {
             "type": "bubble",
             "size": "mega",
             "header": {
                 "type": "box",
                 "layout": "vertical",
-                "backgroundColor": "#000000",
+                "backgroundColor": header_color,
                 "paddingTop": "15px",
                 "paddingBottom": "10px",
                 "paddingStart": "15px",
@@ -90,54 +186,7 @@ def send_line_carousel(articles):
                 "type": "box",
                 "layout": "vertical",
                 "backgroundColor": "#222222",
-                "contents": [
-                    # カテゴリ名をバッジ（ラベル）風に装飾
-                    {
-                        "type": "box",
-                        "layout": "horizontal",
-                        "margin": "none",
-                        "contents": [
-                            {
-                                "type": "box",
-                                "layout": "vertical",
-                                "backgroundColor": section_color,
-                                "cornerRadius": "md",
-                                "paddingTop": "4px",
-                                "paddingBottom": "4px",
-                                "paddingStart": "10px",
-                                "paddingEnd": "10px",
-                                "flex": 0, # テキストの幅に合わせる
-                                "contents": [
-                                    {
-                                        "type": "text",
-                                        "text": article['section'],
-                                        "weight": "bold",
-                                        "color": "#FFFFFF",
-                                        "size": "sm",
-                                        "align": "center"
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "type": "text",
-                        "text": article.get('date', '日付不明'),
-                        "color": "#AAAAAA",
-                        "size": "xs",
-                        "margin": "md"
-                    },
-                    {
-                        "type": "text",
-                        "text": article['title'],
-                        "weight": "bold",
-                        "color": "#FFFFFF",
-                        "size": "md",
-                        "margin": "md",
-                        "wrap": True,
-                        "maxLines": 3
-                    }
-                ]
+                "contents": body_contents
             },
             "footer": {
                 "type": "box",
@@ -153,7 +202,7 @@ def send_line_carousel(articles):
                         "action": {
                             "type": "uri",
                             "label": "詳細を見る",
-                            "uri": article['url']
+                            "uri": item['url']
                         }
                     }
                 ]
@@ -166,13 +215,12 @@ def send_line_carousel(articles):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
-    
     data = {
         "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
-                "altText": "キングフィッシャーの最新情報が更新されました",
+                "altText": "キングフィッシャーからのお知らせ",
                 "contents": {
                     "type": "carousel",
                     "contents": bubbles
@@ -184,11 +232,9 @@ def send_line_carousel(articles):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEにカルーセルメッセージを送信しました！")
+        print("LINEにメッセージを送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
-        if response is not None:
-            print(f"エラー詳細: {response.text}")
 
 # ==========================================
 # スクレイピング処理
@@ -225,9 +271,7 @@ def fetch_articles():
                 date_text = date_tag.get_text(strip=True) if date_tag else ""
                 
                 img_tag = article.find("img")
-                img_url = ""
-                if img_tag:
-                    img_url = img_tag.get("data-src") or img_tag.get("src", "")
+                img_url = img_tag.get("data-src") or img_tag.get("src", "") if img_tag else ""
                 
                 results.append({
                     "section": section_title,
@@ -239,29 +283,70 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（本番稼働用）
+# メイン処理（スマート検知搭載）
 # ==========================================
 def main():
-    print("--- 監視処理開始（本番モード） ---")
+    print("--- 監視処理開始 ---")
     
     current_articles = fetch_articles()
     history = load_history()
-    history_urls = {item["url"] for item in history}
     
-    # 過去データに存在しないURLのみを抽出
-    new_articles = [item for item in current_articles if item["url"] not in history_urls]
+    # 履歴をURLキーの辞書に変換して扱いやすくする
+    history_dict = {item["url"]: item for item in history}
+    notify_list = []
 
-    if not new_articles:
-        print("新規の更新はありません。")
-    else:
-        new_count = len(new_articles)
-        if new_count > MAX_NOTIFY_LIMIT:
-            print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限超過）。LINE通知はスキップします。")
+    for article in current_articles:
+        url = article["url"]
+        title = article["title"]
+        
+        # ① 完全新規の検知
+        if url not in history_dict:
+            article_copy = article.copy()
+            article_copy["notify_type"] = "new"
+            notify_list.append(article_copy)
+            # 履歴に追加（前日通知フラグを初期化）
+            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
         else:
-            print(f"【通知対象】{new_count}件の新規更新が見つかりました。LINEへ通知します。")
-            send_line_carousel(new_articles)
+            past_article = history_dict[url]
+            # ② タイトル変更（中止・延期）の検知
+            if past_article.get("title") != title:
+                if "中止" in title or "延期" in title:
+                    article_copy = article.copy()
+                    article_copy["notify_type"] = "alert"
+                    notify_list.append(article_copy)
+                past_article["title"] = title
+        
+        # ③ 明日開催の自動検知＆リマインド
+        past_article = history_dict[url]
+        if not past_article.get("reminded", False):
+            # タイトルから「○月○日」を抽出
+            match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
+            if match:
+                m = int(match.group(1))
+                d = int(match.group(2))
+                # 日本時間の明日と一致するか確認
+                if m == TOMORROW.month and d == TOMORROW.day:
+                    article_copy = article.copy()
+                    article_copy["notify_type"] = "remind"
+                    weather = get_tomorrow_weather()
+                    article_copy["remind_msg"] = f"明日の天気（栃木北部）: {weather}\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+                    notify_list.append(article_copy)
+                    # 通知済みフラグを立てて二重送信を防止
+                    past_article["reminded"] = True
+
+    # 通知対象がある場合
+    if not notify_list:
+        print("新規更新、日程変更、前日リマインドはありません。")
+    else:
+        new_count = len(notify_list)
+        if new_count > MAX_NOTIFY_LIMIT:
+            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
+        else:
+            print(f"【通知送信】{new_count}件の情報をLINEへ送信します。")
+            send_line_carousel(notify_list)
             
-    updated_history = history + new_articles
+    # 履歴をリストに戻して保存
+    updated_history = list(history_dict.values())
     save_history(updated_history)
     print("--- 監視処理終了 ---")
 
