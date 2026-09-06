@@ -245,10 +245,10 @@ def main():
     print("--- 監視処理開始（本番モード） ---")
     
     current_articles = fetch_articles()
-    
-    # 通常のスクレイピング・差分チェック
     history = load_history()
     history_urls = {item["url"] for item in history}
+    
+    # 過去データに存在しないURLのみを抽出
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
 
     if not new_articles:
