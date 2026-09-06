@@ -112,7 +112,7 @@ def send_line_carousel(articles):
                                         "type": "text",
                                         "text": article['section'],
                                         "weight": "bold",
-                                        "color": "#FFFFFF", # 背景に色がつくので文字は白に
+                                        "color": "#FFFFFF",
                                         "size": "sm",
                                         "align": "center"
                                     }
@@ -125,7 +125,7 @@ def send_line_carousel(articles):
                         "text": article.get('date', '日付不明'),
                         "color": "#AAAAAA",
                         "size": "xs",
-                        "margin": "md" # バッジとの間隔を少し広げる
+                        "margin": "md"
                     },
                     {
                         "type": "text",
@@ -239,28 +239,12 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理
+# メイン処理（本番稼働用）
 # ==========================================
 def main():
-    print("--- 監視処理開始 ---")
+    print("--- 監視処理開始（本番モード） ---")
     
     current_articles = fetch_articles()
-    
-    # 🌟【デザイン確認用】各セクションから1件ずつ抽出してテスト通知する🌟
-    print("デザイン確認用のテスト通知を送信します...")
-    test_articles = []
-    seen_sections = set()
-    for article in current_articles:
-        if article['section'] not in seen_sections:
-            test_article = article.copy()
-            test_article['title'] = f"【デザイン確認】{test_article['title']}"
-            test_articles.append(test_article)
-            seen_sections.add(article['section'])
-        if len(test_articles) == 3:
-            break
-            
-    if test_articles:
-        send_line_carousel(test_articles)
     
     # 通常のスクレイピング・差分チェック
     history = load_history()
@@ -274,7 +258,8 @@ def main():
         if new_count > MAX_NOTIFY_LIMIT:
             print(f"【安全装置作動】{new_count}件の新規記事を検知しました（上限超過）。LINE通知はスキップします。")
         else:
-            print(f"【通知対象】{new_count}件の新規更新が見つかりました。（今回はテストコードのため本番通知は行いません）")
+            print(f"【通知対象】{new_count}件の新規更新が見つかりました。LINEへ通知します。")
+            send_line_carousel(new_articles)
             
     updated_history = history + new_articles
     save_history(updated_history)
