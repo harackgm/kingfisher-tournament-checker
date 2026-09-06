@@ -14,11 +14,11 @@ LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-che
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
-# カテゴリごとの文字色設定
+# カテゴリごとの背景色設定（バッジ用）
 CATEGORY_COLORS = {
-    "大会エントリー": "#FF4B4B",
-    "大会エントリーリスト": "#0367D3",
-    "大会結果": "#F4B400"
+    "大会エントリー": "#FF4B4B",       # 赤
+    "大会エントリーリスト": "#0367D3", # 青
+    "大会結果": "#F4B400"              # 黄
 }
 
 HEADERS = {
@@ -42,7 +42,7 @@ def save_history(history_list):
         json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
-# LINE通知処理（本番用カルーセル）
+# LINE通知処理（カテゴリのバッジ化）
 # ==========================================
 def send_line_carousel(articles):
     if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
@@ -51,6 +51,7 @@ def send_line_carousel(articles):
     
     bubbles = []
     for article in articles:
+        # カテゴリに応じた色を取得
         section_color = CATEGORY_COLORS.get(article['section'], "#1DB446")
         
         hero_image_url = article.get('img_url') if article.get('img_url') else LOGO_URL
@@ -90,19 +91,41 @@ def send_line_carousel(articles):
                 "layout": "vertical",
                 "backgroundColor": "#222222",
                 "contents": [
+                    # カテゴリ名をバッジ（ラベル）風に装飾
                     {
-                        "type": "text",
-                        "text": article['section'],
-                        "weight": "bold",
-                        "color": section_color,
-                        "size": "sm"
+                        "type": "box",
+                        "layout": "horizontal",
+                        "margin": "none",
+                        "contents": [
+                            {
+                                "type": "box",
+                                "layout": "vertical",
+                                "backgroundColor": section_color,
+                                "cornerRadius": "md",
+                                "paddingTop": "4px",
+                                "paddingBottom": "4px",
+                                "paddingStart": "10px",
+                                "paddingEnd": "10px",
+                                "flex": 0, # テキストの幅に合わせる
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": article['section'],
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "sm",
+                                        "align": "center"
+                                    }
+                                ]
+                            }
+                        ]
                     },
                     {
                         "type": "text",
                         "text": article.get('date', '日付不明'),
                         "color": "#AAAAAA",
                         "size": "xs",
-                        "margin": "sm"
+                        "margin": "md"
                     },
                     {
                         "type": "text",
@@ -216,16 +239,16 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（本番稼働）
+# メイン処理（本番稼働用）
 # ==========================================
 def main():
     print("--- 監視処理開始（本番モード） ---")
     
     current_articles = fetch_articles()
+    
+    # 通常のスクレイピング・差分チェック
     history = load_history()
     history_urls = {item["url"] for item in history}
-    
-    # 過去データに存在しないURLのみを抽出
     new_articles = [item for item in current_articles if item["url"] not in history_urls]
 
     if not new_articles:
