@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー
+MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 POKO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/poko.png"
@@ -110,10 +110,19 @@ def send_line_carousel(notify_items):
             badge_text = item['section']
             header_color = "#000000"
             
-        # 記事に画像がない場合はぽこちゃん（poko.png）をフォールバックとして使用
-        hero_image_url = item.get('img_url')
-        if not hero_image_url:
+        # --- 画像の表示ロジック ---
+        show_hero = False
+        hero_image_url = ""
+        
+        if notify_type == "remind":
+            # 前日リマインドの時は必ず「ぽこちゃん」を表示
             hero_image_url = POKO_URL
+            show_hero = True
+        elif item.get('img_url'):
+            # それ以外は記事に画像があればそれを表示
+            hero_image_url = item['img_url']
+            show_hero = True
+        # 上記以外（画像がない通常更新）は show_hero = False となり枠ごと消える
             
         body_contents = [
             {
@@ -195,14 +204,6 @@ def send_line_carousel(notify_items):
                     }
                 ]
             },
-            "hero": {
-                "type": "image",
-                "url": hero_image_url,
-                "size": "full",
-                "aspectRatio": "1.51:1",
-                "aspectMode": "fit",
-                "backgroundColor": "#000000"
-            },
             "body": {
                 "type": "box",
                 "layout": "vertical",
@@ -229,6 +230,18 @@ def send_line_carousel(notify_items):
                 ]
             }
         }
+        
+        # 表示する画像がある場合のみ hero ブロックを追加
+        if show_hero:
+            bubble["hero"] = {
+                "type": "image",
+                "url": hero_image_url,
+                "size": "full",
+                "aspectRatio": "1.51:1",
+                "aspectMode": "fit",
+                "backgroundColor": "#000000"
+            }
+            
         bubbles.append(bubble)
 
     url = "https://api.line.me/v2/bot/message/push"
@@ -315,27 +328,26 @@ def main():
     # 🌟本物のURLを使ったテスト通知🌟
     dummy_articles = []
     if len(current_articles) >= 3:
-        # 1件目: リマインドのテスト（本物のURLと画像を維持）
+        # 1件目: リマインドのテスト（ぽこちゃんが表示される）
         a1 = current_articles[0].copy()
         a1["notify_type"] = "remind"
         a1["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
         a1["title"] = "【テスト: 明日開催】" + a1["title"]
         dummy_articles.append(a1)
         
-        # 2件目: アラートのテスト（本物のURLと画像を維持）
+        # 2件目: アラートのテスト（実際の画像があれば表示される）
         a2 = current_articles[1].copy()
         a2["notify_type"] = "alert"
         a2["title"] = "【テスト: 中止・延期】" + a2["title"]
         dummy_articles.append(a2)
         
-        # 3件目: 通常更新のテスト（本物のURLと画像を維持）
+        # 3件目: 通常更新のテスト（強制的に画像を消し、二重ロゴにならないことを確認）
         a3 = current_articles[2].copy()
         a3["title"] = "【テスト: 通常更新】" + a3["title"]
-        # 強制的にぽこちゃんの動作を確認するため、画像URLを消去
         a3["img_url"] = "" 
         dummy_articles.append(a3)
         
-        print("本物のURLを使用したテスト通知を送信します...")
+        print("テスト通知を送信します...")
         send_line_carousel(dummy_articles)
     else:
         print("テスト用の記事が十分に取得できませんでした。")
