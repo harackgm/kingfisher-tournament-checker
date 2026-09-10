@@ -13,9 +13,12 @@ HISTORY_FILE = "history.json"
 MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
-# 🌟 .png から .jpg に変更
-POKO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/poko.jpg"
+
+# 🌟 通知用画像URLの設定
+POKOASITA_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoasita.jpg"
 POKOCAN_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokocan.jpg"
+POKOENTRY_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoentry.jpg"
+POKOSTOP_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokostop.jpg"
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
@@ -30,7 +33,7 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
-# 🌟 テスト確認のため、USER_IDを指定して個別送信できるように戻しました
+# 🌟 テスト確認のため、USER_IDを指定して個別送信
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 JST = timezone(timedelta(hours=9), 'JST')
@@ -108,10 +111,6 @@ def send_line_carousel(notify_items):
             badge_color = "#FF8C00"
             badge_text = "📣明日開催！"
             header_color = "#222222"
-        elif notify_type == "cancel_wait":
-            badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
-            badge_text = item['section']
-            header_color = "#000000"
         else:
             badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
             badge_text = item['section']
@@ -120,13 +119,20 @@ def send_line_carousel(notify_items):
         show_hero = False
         hero_image_url = ""
         
+        # 🌟 画像の出し分けロジック
         if notify_type == "remind":
-            hero_image_url = POKO_URL
+            hero_image_url = POKOASITA_URL
             show_hero = True
         elif notify_type == "cancel_wait":
             hero_image_url = POKOCAN_URL
             show_hero = True
-        elif item.get('img_url'):
+        elif notify_type == "alert" and item.get("section") == "大会エントリー":
+            hero_image_url = POKOSTOP_URL
+            show_hero = True
+        elif notify_type == "new" and item.get("section") == "大会エントリー":
+            hero_image_url = POKOENTRY_URL
+            show_hero = True
+        elif item.get('img_url'): # その他のセクション用（大会結果等）
             hero_image_url = item['img_url']
             show_hero = True
             
@@ -326,37 +332,47 @@ def fetch_articles():
 # メイン処理（テストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（テスト・個人通知モード） ---")
+    print("--- 監視処理開始（全通知パターンテスト・個人通知モード） ---")
     
     weather = get_tomorrow_weather()
-    current_articles = fetch_articles()
     
-    dummy_articles = []
-    if len(current_articles) >= 3:
-        # 1件目: リマインドのテスト（poko.jpg が表示されるか確認）
-        a1 = current_articles[0].copy()
-        a1["notify_type"] = "remind"
-        a1["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-        a1["title"] = "【テスト: 明日開催】" + a1["title"]
-        dummy_articles.append(a1)
-        
-        # 2件目: キャンセル待ちのテスト（pokocan.jpg が表示されるか確認）
-        a2 = current_articles[1].copy()
-        a2["notify_type"] = "cancel_wait"
-        a2["title"] = "【テスト: キャンセル待ち】" + a2["title"]
-        dummy_articles.append(a2)
-        
-        # 3件目: アラートのテスト
-        a3 = current_articles[2].copy()
-        a3["notify_type"] = "alert"
-        a3["title"] = "【テスト: 中止・延期】" + a3["title"]
-        dummy_articles.append(a3)
-        
-        print("テスト通知を送信します...")
-        send_line_carousel(dummy_articles)
-    else:
-        print("テスト用の記事が十分に取得できませんでした。")
-        
+    # 🌟強制的にダミーデータを送って全デザインを確認する🌟
+    dummy_articles = [
+        {
+            "section": "大会エントリー",
+            "notify_type": "new",
+            "date": "2026年9月10日",
+            "title": "【テスト: 新規エントリー】WEEKDAY TROUT Tournament 2026",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": "" # ここはコードによりpokoentry.jpgに差し替わります
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "cancel_wait",
+            "date": "2026年9月10日",
+            "title": "【テスト: キャンセル待ち】現在キャンセル待ち：WEEKDAY TROUT Tournament 2026",
+            "url": "https://kingfisher-tochigi.com/"
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "remind",
+            "date": "2026年9月10日",
+            "title": "【テスト: 明日開催】WEEKDAY TROUT Tournament 2026",
+            "url": "https://kingfisher-tochigi.com/",
+            "remind_msg": f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "alert",
+            "date": "2026年9月10日",
+            "title": "【テスト: 中止・延期】中止のお知らせ：WEEKDAY TROUT Tournament 2026",
+            "url": "https://kingfisher-tochigi.com/"
+        }
+    ]
+    
+    print("テスト通知を送信します...")
+    send_line_carousel(dummy_articles)
+    
     print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
 
