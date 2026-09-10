@@ -14,13 +14,14 @@ MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
-# 🌟 画像URLのセット（新規追加分を含む全6種類）
+# 🌟 画像URLのセット（新規追加分を含む全7種類）
 POKOASITA_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoasita.jpg"
 POKOCAN_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokocan.jpg"
 POKOENTRY_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoentry.jpg"
 POKOSTOP_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokostop.jpg"
 POKOSINGLE_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokosingle.jpg"
 POKOSTEAM_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokosteam.jpg"
+POKOLIST_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokolist.jpg"
 
 TARGET_SECTIONS = ["大会エントリー", "大会エントリーリスト", "大会結果"]
 
@@ -156,13 +157,15 @@ def send_line_carousel(notify_items):
                     hero_image_url = POKOENTRY_URL
                     show_hero = True
                 elif item.get("section") == "大会結果":
-                    # 🌟 大会結果の場合は、チーム戦かシングル戦かでさらに画像を分ける
                     if "チーム戦" in title_lower:
                         hero_image_url = POKOSTEAM_URL
                     else:
                         hero_image_url = POKOSINGLE_URL
                     show_hero = True
-            # ※上記以外（「大会エントリーリスト」）は画像を非表示にしてスッキリさせる
+                elif item.get("section") == "大会エントリーリスト":
+                    # 🌟 エントリーリスト用の画像を追加
+                    hero_image_url = POKOLIST_URL
+                    show_hero = True
             
         body_contents = [
             {
@@ -364,7 +367,7 @@ def main():
     
     weather = get_tomorrow_weather()
     
-    # 🌟テストデータのエラー回避のため、タイトルに「平日大会」を追加🌟
+    # 🌟すべてのデザインパターンを確認するためのダミーデータ🌟
     dummy_articles = [
         {
             "section": "大会エントリー",
@@ -378,7 +381,7 @@ def main():
             "section": "大会エントリー",
             "notify_type": "cancel_wait",
             "date": "2026年9月10日",
-            "title": "【テスト: キャンセル待ち】平日大会 現在キャンセル待ち", # 修正
+            "title": "【テスト: キャンセル待ち】平日大会 現在キャンセル待ち", 
             "url": "https://kingfisher-tochigi.com/",
             "img_url": "dummy"
         },
@@ -395,7 +398,7 @@ def main():
             "section": "大会エントリー",
             "notify_type": "alert",
             "date": "2026年9月10日",
-            "title": "【テスト: 中止・延期】平日大会 中止のお知らせ", # 修正
+            "title": "【テスト: 中止・延期】平日大会 中止のお知らせ", 
             "url": "https://kingfisher-tochigi.com/",
             "img_url": "dummy"
         },
@@ -427,7 +430,7 @@ def main():
             "section": "大会エントリーリスト",
             "notify_type": "new",
             "date": "2026年9月10日",
-            "title": "【テスト: リスト(画像なし)】平日大会第5戦 エントリーリスト",
+            "title": "【テスト: リスト】平日大会第5戦 エントリーリスト", # 🌟 追加したpokolist.jpgのテスト
             "url": "https://kingfisher-tochigi.com/",
             "img_url": "dummy"
         }
