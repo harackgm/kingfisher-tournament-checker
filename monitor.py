@@ -364,7 +364,7 @@ def main():
     
     weather = get_tomorrow_weather()
     
-    # 🌟すべてのデザインパターンを確認するためのダミーデータ🌟
+    # 🌟テストデータのエラー回避のため、タイトルに「平日大会」を追加🌟
     dummy_articles = [
         {
             "section": "大会エントリー",
@@ -372,13 +372,13 @@ def main():
             "date": "2026年9月10日",
             "title": "【テスト: 新規エントリー】平日大会プレチーム戦",
             "url": "https://kingfisher-tochigi.com/",
-            "img_url": "dummy"
+            "img_url": "dummy" 
         },
         {
             "section": "大会エントリー",
             "notify_type": "cancel_wait",
             "date": "2026年9月10日",
-            "title": "【テスト: キャンセル待ち】現在キャンセル待ち",
+            "title": "【テスト: キャンセル待ち】平日大会 現在キャンセル待ち", # 修正
             "url": "https://kingfisher-tochigi.com/",
             "img_url": "dummy"
         },
@@ -395,7 +395,7 @@ def main():
             "section": "大会エントリー",
             "notify_type": "alert",
             "date": "2026年9月10日",
-            "title": "【テスト: 中止・延期】中止のお知らせ",
+            "title": "【テスト: 中止・延期】平日大会 中止のお知らせ", # 修正
             "url": "https://kingfisher-tochigi.com/",
             "img_url": "dummy"
         },
