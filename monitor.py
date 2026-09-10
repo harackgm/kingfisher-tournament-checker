@@ -14,7 +14,7 @@ MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
-# 🌟 通知用画像URLの設定
+# 🌟 4種類の画像をセット
 POKOASITA_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoasita.jpg"
 POKOCAN_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokocan.jpg"
 POKOENTRY_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoentry.jpg"
@@ -115,26 +115,48 @@ def send_line_carousel(notify_items):
             badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
             badge_text = item['section']
             header_color = "#000000"
+
+        # 🌟 【変更】通常大会（黒・青ロゴ）を判定するキーワードリスト
+        # これらに該当「しない」ものは全て「特別大会」として扱う
+        normal_keywords = [
+            "weekday", "平日", 
+            "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "最終戦", 
+            "1st戦", "2nd戦", "3rd戦", "4th戦", "1st season", "2nd season",
+            "チーム戦", "マスターズ", "鉄板王", "シリーズ"
+        ]
+        
+        # 判定用：タイトルをすべて小文字や全角/半角を統一して比較しやすくする
+        title_lower = item['title'].lower()
+        title_lower = title_lower.replace("１", "1").replace("２", "2").replace("３", "3").replace("４", "4").replace("５", "5")
+        
+        # タイトルの中に通常大会のキーワードが含まれているかチェック
+        is_normal = any(kw in title_lower for kw in normal_keywords)
+        # 逆説的に、通常大会でなければ特別大会（True）とする
+        is_special = not is_normal
             
         show_hero = False
         hero_image_url = ""
         
         # 🌟 画像の出し分けロジック
-        if notify_type == "remind":
-            hero_image_url = POKOASITA_URL
-            show_hero = True
-        elif notify_type == "cancel_wait":
-            hero_image_url = POKOCAN_URL
-            show_hero = True
-        elif notify_type == "alert" and item.get("section") == "大会エントリー":
-            hero_image_url = POKOSTOP_URL
-            show_hero = True
-        elif notify_type == "new" and item.get("section") == "大会エントリー":
-            hero_image_url = POKOENTRY_URL
-            show_hero = True
-        elif item.get('img_url'): # その他のセクション用（大会結果等）
+        if is_special and item.get('img_url'):
+            # 特別大会は常にサイトのアイキャッチ画像を使用
             hero_image_url = item['img_url']
             show_hero = True
+        else:
+            # 通常の大会（平日・シリーズ・チーム戦・マスターズ・鉄板王など）の場合は画像を差し替え
+            if notify_type == "remind":
+                hero_image_url = POKOASITA_URL
+                show_hero = True
+            elif notify_type == "cancel_wait":
+                hero_image_url = POKOCAN_URL
+                show_hero = True
+            elif notify_type == "alert":
+                hero_image_url = POKOSTOP_URL
+                show_hero = True
+            elif notify_type == "new" and item.get("section") == "大会エントリー":
+                hero_image_url = POKOENTRY_URL
+                show_hero = True
+            # ※上記以外（「大会結果」等）の通常大会は画像を非表示にしてスッキリさせる
             
         body_contents = [
             {
@@ -255,7 +277,7 @@ def send_line_carousel(notify_items):
             
         bubbles.append(bubble)
 
-    # 🌟テスト用にPush通知（個人宛て）に設定🌟
+    # 🌟テスト用にPush通知（個人宛て）に設定
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
@@ -342,31 +364,49 @@ def main():
             "section": "大会エントリー",
             "notify_type": "new",
             "date": "2026年9月10日",
-            "title": "【テスト: 新規エントリー】WEEKDAY TROUT Tournament 2026",
+            "title": "【テスト: 通常大会】平日大会プレチーム戦エントリーフォーム",
             "url": "https://kingfisher-tochigi.com/",
-            "img_url": "" # ここはコードによりpokoentry.jpgに差し替わります
+            "img_url": "dummy" # 通常大会なので指定イラストに差し替わる
         },
         {
             "section": "大会エントリー",
-            "notify_type": "cancel_wait",
+            "notify_type": "new",
             "date": "2026年9月10日",
-            "title": "【テスト: キャンセル待ち】現在キャンセル待ち：WEEKDAY TROUT Tournament 2026",
-            "url": "https://kingfisher-tochigi.com/"
-        },
-        {
-            "section": "大会エントリー",
-            "notify_type": "remind",
-            "date": "2026年9月10日",
-            "title": "【テスト: 明日開催】WEEKDAY TROUT Tournament 2026",
+            "title": "【テスト: 通常大会】KING of Fishers マスターズ参加者・参加者限定お弁当受付",
             "url": "https://kingfisher-tochigi.com/",
-            "remind_msg": f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+            "img_url": "dummy" # 通常大会なので指定イラストに差し替わる
         },
         {
             "section": "大会エントリー",
-            "notify_type": "alert",
+            "notify_type": "new",
             "date": "2026年9月10日",
-            "title": "【テスト: 中止・延期】中止のお知らせ：WEEKDAY TROUT Tournament 2026",
-            "url": "https://kingfisher-tochigi.com/"
+            "title": "【テスト: 通常大会】鉄板王頂上決戦のエントリーについて",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": "dummy",
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "new",
+            "date": "2026年9月10日",
+            "title": "【テスト: 特別大会】全日本ジュニア・釣り女子エリアトラウト選手権大会",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": "https://kingfisher-tochigi.com/wordpress/wp-content/uploads/2026/09/e8c4aef9ece51423d146ab8a257b3823-300x300.png"
+        },
+        {
+            "section": "大会エントリー",
+            "notify_type": "new",
+            "date": "2026年9月10日",
+            "title": "【テスト: 新たな特別大会】上州屋様主催「TRIVE」決勝大会",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": "https://kingfisher-tochigi.com/wordpress/wp-content/uploads/2026/04/trive.png"
+        },
+        {
+            "section": "大会結果",
+            "notify_type": "new",
+            "date": "2026年9月10日",
+            "title": "【テスト: 大会結果】平日大会第5戦 大会結果",
+            "url": "https://kingfisher-tochigi.com/",
+            "img_url": "https://kingfisher-tochigi.com/wordpress/wp-content/uploads/2026/01/2-150x150.png" # 邪魔な青黒ロゴなので非表示になる
         }
     ]
     
