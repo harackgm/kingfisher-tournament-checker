@@ -38,8 +38,6 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
-# 🌟 テスト用：個人宛てPush送信設定（全員通知事故防止）
-LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 # 日本時間 (JST) 基準設定
 JST = timezone(timedelta(hours=9), 'JST')
@@ -98,14 +96,14 @@ def get_tomorrow_weather():
     return msg
 
 # ==========================================
-# LINE通知処理（テスト個別送信版）
+# LINE通知処理（登録者全員への一斉送信版）
 # ==========================================
 def send_line_carousel(notify_items, all_articles):
-    if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
-        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
+    if not LINE_ACCESS_TOKEN:
+        print("エラー: LINE_ACCESS_TOKEN が設定されていません。")
         return
     
-    # 🌟 タイムスタンプ生成（キャッシュ回避用パラメータ）
+    # タイムスタンプ生成（LINEアプリ側キャッシュ回避用）
     ts = int(time.time())
     
     pokoasita_url = f"{POKOASITA_BASE}?t={ts}"
@@ -127,6 +125,7 @@ def send_line_carousel(notify_items, all_articles):
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
+        # バッジテキストの動的判定
         if notify_type == "alert":
             badge_color = "#FF0000"
             badge_text = "⚠️中止・延期のお知らせ"
@@ -308,13 +307,13 @@ def send_line_carousel(notify_items, all_articles):
             
         bubbles.append(bubble)
 
-    url = "https://api.line.me/v2/bot/message/push"
+    # 🌟 本番用：LINE登録者全員へ一斉送信（Broadcast API）
+    url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     data = {
-        "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
@@ -330,7 +329,7 @@ def send_line_carousel(notify_items, all_articles):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEにテストメッセージ（個人宛）を送信しました！")
+        print("LINEに一斉送信メッセージを送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
@@ -381,26 +380,85 @@ def fetch_articles():
     return results
 
 # ==========================================
-# メイン処理（キャッシュ対策検証・テストモード）
+# メイン処理（公開本番用）
 # ==========================================
 def main():
-    print("--- 監視処理開始（キャッシュ対策テストモード） ---")
+    print("--- 監視処理開始（公開本番モード） ---")
     
-    # テスト用ダミーデータ（テスト3の画像表示確認）
-    dummy_articles = [
-        {
-            "section": "大会エントリー",
-            "notify_type": "cancel_wait",
-            "is_updated": True,
-            "date": "2026年9月12日",
-            "title": "【テスト3】平日大会 【現在キャンセル待ち】",
-            "url": "https://kingfisher-tochigi.com/t3",
-            "img_url": "dummy"
-        }
-    ]
+    current_articles = fetch_articles()
+    history = load_history()
     
-    print("テスト通知を送信します...")
-    send_line_carousel(dummy_articles, dummy_articles)
+    history_dict = {item["url"]: item for item in history}
+    notify_list = []
+
+    for article in current_articles:
+        url = article["url"]
+        title = article["title"]
+        
+        is_new_or_updated = False
+        
+        # ① 完全新規の検知
+        if url not in history_dict:
+            article_copy = article.copy()
+            article_copy["is_updated"] = False # 初回作成フラグ
+            if "キャンセル待ち" in title:
+                article_copy["notify_type"] = "cancel_wait"
+            else:
+                article_copy["notify_type"] = "new"
+            notify_list.append(article_copy)
+            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
+            is_new_or_updated = True
+        else:
+            past_article = history_dict[url]
+            # ② タイトル変更（中止・延期・キャンセル待ち等の変更）の検知
+            if past_article.get("title") != title:
+                article_copy = article.copy()
+                article_copy["is_updated"] = True # 更新フラグ
+                if "中止" in title or "延期" in title:
+                    article_copy["notify_type"] = "alert"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                elif "キャンセル待ち" in title and "キャンセル待ち" not in past_article.get("title"):
+                    article_copy["notify_type"] = "cancel_wait"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                elif "キャンセル待ち" not in title and "キャンセル待ち" in past_article.get("title"):
+                    article_copy["notify_type"] = "new"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                else:
+                    article_copy["notify_type"] = "new"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                past_article["title"] = title
+        
+        # ③ 明日開催の自動検知＆リマインド
+        past_article = history_dict[url]
+        if not is_new_or_updated and not past_article.get("reminded", False):
+            match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
+            if match:
+                m = int(match.group(1))
+                d = int(match.group(2))
+                if m == TOMORROW.month and d == TOMORROW.day:
+                    article_copy = article.copy()
+                    article_copy["notify_type"] = "remind"
+                    weather = get_tomorrow_weather()
+                    article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+                    notify_list.append(article_copy)
+                    past_article["reminded"] = True
+
+    if not notify_list:
+        print("新規更新、日程変更、前日リマインドはありません。")
+    else:
+        new_count = len(notify_list)
+        if new_count > MAX_NOTIFY_LIMIT:
+            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
+        else:
+            print(f"【通知送信】{new_count}件の情報をLINEの登録者全員へ一斉送信します。")
+            send_line_carousel(notify_list, current_articles)
+            
+    updated_history = list(history_dict.values())
+    save_history(updated_history)
     print("--- 監視処理終了 ---")
 
 if __name__ == "__main__":
