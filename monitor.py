@@ -64,22 +64,19 @@ def send_line_carousel(notify_items, all_articles):
     pokolist_url = f"{POKOLIST_BASE}?t={ts}"
     pokolistcan_url = f"{POKOLISTCAN_BASE}?t={ts}"
     
-    has_global_cancel_wait = any(
-        art['section'] == "大会エントリー" and "キャンセル待ち" in art['title']
-        for art in all_articles
-    )
-    
     bubbles = []
     for item in notify_items:
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
+        # タイトル整形（リマインド通知時のキャンセル待ち除去）
         display_title = item['title']
         if notify_type == "remind":
             display_title = display_title.replace("【現在キャンセル待ち：", "【")
             display_title = display_title.replace("現在キャンセル待ち：", "").replace("現在キャンセル待ち", "")
             display_title = display_title.replace("【キャンセル待ち】", "").replace("キャンセル待ち", "")
-        
+
+        # バッジ色・テキスト判定
         if notify_type == "alert":
             badge_color = "#FF0000"
             badge_text = "⚠️中止・延期のお知らせ"
@@ -88,6 +85,10 @@ def send_line_carousel(notify_items, all_articles):
             badge_color = "#FF8C00"
             badge_text = "📣明日開催！"
             header_color = "#222222"
+        elif notify_type == "cancel_wait":
+            badge_color = CATEGORY_COLORS.get(item['section'], "#1DB446")
+            badge_text = item['section']
+            header_color = "#000000"
         else:
             if is_updated:
                 badge_color = "#FF8C00"
@@ -104,18 +105,33 @@ def send_line_carousel(notify_items, all_articles):
                 badge_text = item['section']
             header_color = "#000000"
 
+        # 特別大会判定
         normal_keywords = [
             "weekday", "平日", 
-            "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "最終戦", 
+            "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", 
             "1st戦", "2nd戦", "3rd戦", "4th戦", "1st season", "2nd season",
             "チーム戦", "マスターズ", "鉄板王", "シリーズ"
         ]
         
         title_lower = item['title'].lower()
-        title_lower = title_lower.replace("１", "1").replace("２", "2").replace("３", "3").replace("４", "4").replace("５", "5")
+        title_lower = title_lower.replace("１", "1").replace("２", "2").replace("３", "3").replace("４", "4").replace("５", "5").replace("６", "6")
         
         is_normal = any(kw in title_lower for kw in normal_keywords)
         is_special = not is_normal
+
+        # 🌟 修正ポイント：同じ大会のフォームとリストを精密に紐付けて判定
+        has_linked_cancel_wait = False
+        if item.get("section") == "大会エントリーリスト":
+            match_keywords = ["平日", "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王"]
+            for kw in match_keywords:
+                if kw in item['title']:
+                    # 同じキーワードを持つ「大会エントリー(フォーム)」を探す
+                    for art in all_articles:
+                        if art.get("section") == "大会エントリー" and kw in art.get("title", ""):
+                            if "キャンセル待ち" in art.get("title", ""):
+                                has_linked_cancel_wait = True
+                            break
+                    break
             
         show_hero = False
         hero_image_url = ""
@@ -144,7 +160,7 @@ def send_line_carousel(notify_items, all_articles):
                         hero_image_url = pokosingle_url
                     show_hero = True
                 elif item.get("section") == "大会エントリーリスト":
-                    if "キャンセル待ち" in title_lower or has_global_cancel_wait:
+                    if "キャンセル待ち" in title_lower or has_linked_cancel_wait:
                         hero_image_url = pokolistcan_url
                     else:
                         hero_image_url = pokolist_url
@@ -276,51 +292,66 @@ def send_line_carousel(notify_items, all_articles):
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     
-    # 10個のバブルがあると一度に送れる上限（10カルーセル）に達するため、そのまま送信
-    data = {
-        "to": LINE_USER_ID,
-        "messages": [
-            {
-                "type": "flex",
-                "altText": "キングフィッシャーからのお知らせ（全パターンテスト）",
-                "contents": {
-                    "type": "carousel",
-                    "contents": bubbles[:10]
-                }
-            }
-        ]
-    }
-    
+    # 10個のバブルがあると一度に送れる上限を超えるため、2回に分けて送信
     try:
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        print("LINEにテストメッセージ（全パターン）を送信しました！")
+        data1 = {
+            "to": LINE_USER_ID,
+            "messages": [
+                {
+                    "type": "flex",
+                    "altText": "キングフィッシャーからのお知らせ（前半）",
+                    "contents": {
+                        "type": "carousel",
+                        "contents": bubbles[:6]
+                    }
+                }
+            ]
+        }
+        requests.post(url, headers=headers, json=data1).raise_for_status()
+        
+        if len(bubbles) > 6:
+            data2 = {
+                "to": LINE_USER_ID,
+                "messages": [
+                    {
+                        "type": "flex",
+                        "altText": "キングフィッシャーからのお知らせ（後半）",
+                        "contents": {
+                            "type": "carousel",
+                            "contents": bubbles[6:]
+                        }
+                    }
+                ]
+            }
+            requests.post(url, headers=headers, json=data2).raise_for_status()
+            
+        print("LINEにテストメッセージ（全11パターン）を送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
 # ==========================================
-# メイン処理（全パターンテストモード）
+# メイン処理（全11パターンテストモード）
 # ==========================================
 def main():
     print("--- 監視処理開始（全通知パターンテストモード） ---")
     
-    # 🌟 全10パターンのテストデータを生成
+    # 🌟 全11パターンのテストデータ（第6戦は通常、第5戦はキャン待ち状態に分離）
     test_notify_list = [
-        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【1. 新規】第5戦エントリー開始", "url": "https://kingfisher-tochigi.com/t1"},
-        {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【2. 更新】第5戦エントリー情報（定員増など）", "url": "https://kingfisher-tochigi.com/t2"},
-        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【3. 新規】第5戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t3"},
-        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【4. 更新】第5戦エントリーリスト（通常更新）", "url": "https://kingfisher-tochigi.com/t4"},
-        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【5. キャン待ち更新】第5戦エントリーリスト（キャンセル待ち）", "url": "https://kingfisher-tochigi.com/t5"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【1. 新規】第6戦エントリー開始", "url": "https://kingfisher-tochigi.com/t1"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【2. 更新】第6戦エントリー情報（定員増など）", "url": "https://kingfisher-tochigi.com/t2"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【3. 新規】第6戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t3"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【4. 更新】第6戦エントリーリスト（通常更新）", "url": "https://kingfisher-tochigi.com/t4"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【5. キャン待ち連動更新】第5戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t5"},
         {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【6. 新規】第5戦大会結果", "url": "https://kingfisher-tochigi.com/t6"},
         {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【7. 更新】第5戦大会結果（修正等）", "url": "https://kingfisher-tochigi.com/t7"},
         {"section": "大会エントリー", "notify_type": "cancel_wait", "is_updated": True, "date": "2026年9月13日", "title": "【8. キャン待ち】第5戦（現在キャンセル待ち）", "url": "https://kingfisher-tochigi.com/t8"},
         {"section": "大会エントリー", "notify_type": "alert", "is_updated": True, "date": "2026年9月13日", "title": "【9. アラート】第5戦 中止のお知らせ", "url": "https://kingfisher-tochigi.com/t9"},
         {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【10. リマインド】現在キャンセル待ち：第5戦エントリー（※タイトル整形テスト）", "url": "https://kingfisher-tochigi.com/t10", 
-         "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】くもり\n🌡️ 【気温】最高 25℃ / 最低 20℃\n🍃 【風向】北の風\n💨 【最大風速】約 2.4 m/s\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"}
+         "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】くもり\n🌡️ 【気温】最高 25℃ / 最低 20℃\n🍃 【風向】北の風\n💨 【最大風速】約 2.4 m/s\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【11. 特別大会】KING of Fishers 感謝祭", "url": "https://kingfisher-tochigi.com/t11", "img_url": "https://kingfisher-tochigi.com/wordpress/wp-content/uploads/2024/01/KING-of-Fishers-4.png"}
     ]
     
-    print("【通知送信】全10パターンのカルーセルを個人宛てに送信します。")
-    # 全体を渡して連携用ロジック（has_global_cancel_wait等）も同時に走らせます
+    print("【通知送信】全11パターンのカルーセルを個人宛てに送信します。")
     send_line_carousel(test_notify_list, test_notify_list)
             
     print("--- テスト実行のため、history.jsonの更新は行いません ---")
