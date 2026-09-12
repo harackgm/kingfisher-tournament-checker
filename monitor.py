@@ -64,11 +64,6 @@ def send_line_carousel(notify_items, all_articles):
     pokolist_url = f"{POKOLIST_BASE}?t={ts}"
     pokolistcan_url = f"{POKOLISTCAN_BASE}?t={ts}"
     
-    has_global_cancel_wait = any(
-        art['section'] == "大会エントリー" and "キャンセル待ち" in art['title']
-        for art in all_articles
-    )
-    
     bubbles = []
     for item in notify_items:
         notify_type = item.get("notify_type", "new")
@@ -108,7 +103,7 @@ def send_line_carousel(notify_items, all_articles):
                 badge_text = item['section']
             header_color = "#000000"
 
-        # 特別大会判定（これらのキーワードを含まない場合は特別大会として処理）
+        # 特別大会判定
         normal_keywords = [
             "weekday", "平日", 
             "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", 
@@ -122,7 +117,7 @@ def send_line_carousel(notify_items, all_articles):
         is_normal = any(kw in title_lower for kw in normal_keywords)
         is_special = not is_normal
 
-        # 同じ大会のフォームとリストを紐付けて判定するロジック
+        # 同じ大会のフォームとリストを精密に紐付けて判定
         has_linked_cancel_wait = False
         if item.get("section") == "大会エントリーリスト":
             match_keywords = ["平日", "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王"]
@@ -138,7 +133,6 @@ def send_line_carousel(notify_items, all_articles):
         show_hero = False
         hero_image_url = ""
         
-        # 特別大会の場合は、抽出したアイキャッチ画像を表示
         if is_special and item.get('img_url'):
             hero_image_url = item['img_url']
             show_hero = True
@@ -157,7 +151,6 @@ def send_line_carousel(notify_items, all_articles):
                     hero_image_url = pokoentry_url
                     show_hero = True
                 elif item.get("section") == "大会結果":
-                    # チーム戦の判定
                     if "チーム戦" in title_lower:
                         hero_image_url = pokosteam_url
                     else:
@@ -296,7 +289,7 @@ def send_line_carousel(notify_items, all_articles):
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     
-    # LINEの仕様上、1つのカルーセルで送れる最大バブル数は10個なので、2回に分けて送信します
+    # 10個のバブルがあると一度に送れる上限（10カルーセル）を超えるため、2回に分けて送信
     try:
         data1 = {
             "to": LINE_USER_ID,
@@ -339,21 +332,21 @@ def send_line_carousel(notify_items, all_articles):
 def main():
     print("--- 監視処理開始（全通知パターンテストモード） ---")
     
-    # 🌟 全13パターンのテストデータ（チーム戦、特別大会を網羅）
+    # 🌟 全13パターンのテストデータ（第6戦は通常、第5戦はキャン待ち状態に分離）
     test_notify_list = [
-        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト1: 新規】平日大会エントリー開始", "url": "https://kingfisher-tochigi.com/t1"},
-        {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト2: 更新】平日大会エントリー（定員増）", "url": "https://kingfisher-tochigi.com/t2"},
-        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト3: 新規】第5戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t3"},
-        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト4: 更新】第5戦エントリーリスト（通常更新）", "url": "https://kingfisher-tochigi.com/t4"},
-        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト5: キャン待ち更新】【キャンセル待ち】第5戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t5"},
-        {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト6: 新規】第5戦大会結果", "url": "https://kingfisher-tochigi.com/t6"},
-        {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト7: 更新】第5戦大会結果（修正）", "url": "https://kingfisher-tochigi.com/t7"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト1: 新規】第6戦エントリー開始", "url": "https://kingfisher-tochigi.com/t1"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト2: 更新】第6戦エントリー（定員増）", "url": "https://kingfisher-tochigi.com/t2"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト3: 新規】第6戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t3"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト4: 更新】第6戦エントリーリスト（通常更新）", "url": "https://kingfisher-tochigi.com/t4"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト5: キャン待ち連動】第5戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t5"},
+        {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト6: 新規】第6戦大会結果", "url": "https://kingfisher-tochigi.com/t6"},
+        {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト7: 更新】第6戦大会結果（修正）", "url": "https://kingfisher-tochigi.com/t7"},
         {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト8: 新規】チーム戦 大会結果", "url": "https://kingfisher-tochigi.com/t8"},
         {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト9: 更新】チーム戦 大会結果（修正）", "url": "https://kingfisher-tochigi.com/t9"},
-        {"section": "大会エントリー", "notify_type": "cancel_wait", "is_updated": True, "date": "2026年9月13日", "title": "【テスト10: キャン待ち】【現在キャンセル待ち】平日大会", "url": "https://kingfisher-tochigi.com/t10"},
+        {"section": "大会エントリー", "notify_type": "cancel_wait", "is_updated": True, "date": "2026年9月13日", "title": "【テスト10: キャン待ち】【現在キャンセル待ち】第5戦", "url": "https://kingfisher-tochigi.com/t10"},
         {"section": "大会エントリー", "notify_type": "alert", "is_updated": True, "date": "2026年9月13日", "title": "【テスト11: アラート】平日大会 中止のお知らせ", "url": "https://kingfisher-tochigi.com/t11"},
-        {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【テスト12: リマインド】【現在キャンセル待ち：9月13日開催】シリーズ第5戦エントリーフォーム", "url": "https://kingfisher-tochigi.com/t12", "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】くもり\n🌡️ 【気温】最高 25℃ / 最低 20℃\n🍃 【風向】北の風\n💨 【最大風速】約 2.4 m/s\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"},
-        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト13: 特別大会】全日本ジュニア・釣り女子エリアトラウト選手権大会", "url": "https://kingfisher-tochigi.com/t13", "img_url": "https://kingfisher-tochigi.com/wordpress/wp-content/uploads/2024/01/3.png"}
+        {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【テスト12: リマインド】【現在キャンセル待ち：9月13日開催】第5戦エントリーフォーム", "url": "https://kingfisher-tochigi.com/t12", "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】くもり\n🌡️ 【気温】最高 25℃ / 最低 20℃\n🍃 【風向】北の風\n💨 【最大風速】約 2.4 m/s\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト13: 特別大会】全日本ジュニア・釣り女子エリアトラウト選手権大会", "url": "https://kingfisher-tochigi.com/t13", "img_url": "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoasita.jpg"} # テスト用にダミーの別画像を使用
     ]
     
     print("【通知送信】全13パターンのカルーセルを個人宛てに送信します。")
