@@ -127,6 +127,13 @@ def send_line_carousel(notify_items, all_articles):
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
+        # 🌟 リマインド通知時のタイトル自動整形（不格好な「キャンセル待ち」表記を削除）
+        display_title = item['title']
+        if notify_type == "remind":
+            display_title = display_title.replace("【現在キャンセル待ち：", "【")
+            display_title = display_title.replace("現在キャンセル待ち：", "").replace("現在キャンセル待ち", "")
+            display_title = display_title.replace("【キャンセル待ち】", "").replace("キャンセル待ち", "")
+        
         if notify_type == "alert":
             badge_color = "#FF0000"
             badge_text = "⚠️中止・延期のお知らせ"
@@ -235,7 +242,7 @@ def send_line_carousel(notify_items, all_articles):
             },
             {
                 "type": "text",
-                "text": item['title'],
+                "text": display_title, # 🌟 自動整形された綺麗なタイトルを使用
                 "weight": "bold",
                 "color": "#FFFFFF",
                 "size": "md",
@@ -303,9 +310,20 @@ def send_line_carousel(notify_items, all_articles):
                 ]
             }
         }
+        
+        if show_hero:
+            bubble["hero"] = {
+                "type": "image",
+                "url": hero_image_url,
+                "size": "full",
+                "aspectRatio": "1.51:1",
+                "aspectMode": "fit",
+                "backgroundColor": "#000000"
+            }
+            
         bubbles.append(bubble)
 
-    # テスト用：LINE個人宛てへPush送信
+    # 🌟 テスト用：LINE個人宛てへPush送信
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
@@ -336,7 +354,7 @@ def send_line_carousel(notify_items, all_articles):
 # スクレイピング処理
 # ==========================================
 def fetch_articles():
-    # 🌟 重複防止検証用のダミーデータを返却
+    # 🌟 検証用ダミーデータ（フォームとリストの両方）
     return [
         {
             "section": "大会エントリー",
@@ -355,10 +373,10 @@ def fetch_articles():
     ]
 
 # ==========================================
-# メイン処理（重複防止検証・テストモード）
+# メイン処理（重複防止＆タイトル整形テストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（リマインド重複防止テストモード） ---")
+    print("--- 監視処理開始（リマインド改善テストモード） ---")
     
     current_articles = fetch_articles()
     
@@ -379,14 +397,14 @@ def main():
         
         # ③ 明日開催の自動検知＆リマインド
         if not is_new_or_updated and not past_article.get("reminded", False):
-            # 🌟 修正ポイント: リマインド対象を「大会エントリー」のみに限定
+            # 🌟 対象を「大会エントリー」の1通のみに限定（リスト側は無視）
             if past_article.get("section") == "大会エントリー":
                 match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
                 if match:
                     m = int(match.group(1))
                     d = int(match.group(2))
                     if m == TOMORROW.month and d == TOMORROW.day:
-                        # テストのため時間制限（18〜21時）は一時的に解除して即時発動
+                        # テストのため時間制限は解除して即時発動
                         article_copy = article.copy()
                         article_copy["notify_type"] = "remind"
                         weather = get_tomorrow_weather()
