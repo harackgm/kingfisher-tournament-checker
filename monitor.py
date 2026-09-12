@@ -41,7 +41,8 @@ LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
 
 # 日本時間 (JST) 基準設定
 JST = timezone(timedelta(hours=9), 'JST')
-TOMORROW = datetime.now(JST) + timedelta(days=1)
+CURRENT_TIME = datetime.now(JST)
+TOMORROW = CURRENT_TIME + timedelta(days=1)
 
 # ==========================================
 # データ管理処理
@@ -125,7 +126,7 @@ def send_line_carousel(notify_items, all_articles):
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
-        # 🌟 全セクション対応：バッジテキストと色の動的判定
+        # 全セクション対応：バッジテキストと色の動的判定
         if notify_type == "alert":
             badge_color = "#FF0000"
             badge_text = "⚠️中止・延期のお知らせ"
@@ -315,7 +316,7 @@ def send_line_carousel(notify_items, all_articles):
             
         bubbles.append(bubble)
 
-    # 🌟 本番用：LINE登録者全員へ一斉送信（Broadcast API）
+    # 本番用：LINE登録者全員へ一斉送信（Broadcast API）
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
@@ -448,12 +449,14 @@ def main():
                 m = int(match.group(1))
                 d = int(match.group(2))
                 if m == TOMORROW.month and d == TOMORROW.day:
-                    article_copy = article.copy()
-                    article_copy["notify_type"] = "remind"
-                    weather = get_tomorrow_weather()
-                    article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-                    notify_list.append(article_copy)
-                    past_article["reminded"] = True
+                    # 日本時間で18時〜21時台（18:00〜21:59）にのみリマインドを発動させる制御
+                    if 18 <= CURRENT_TIME.hour <= 21:
+                        article_copy = article.copy()
+                        article_copy["notify_type"] = "remind"
+                        weather = get_tomorrow_weather()
+                        article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
+                        notify_list.append(article_copy)
+                        past_article["reminded"] = True
 
     if not notify_list:
         print("新規更新、日程変更、前日リマインドはありません。")
