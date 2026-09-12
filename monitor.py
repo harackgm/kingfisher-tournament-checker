@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 15 # テスト用に上限を一時解放
+MAX_NOTIFY_LIMIT = 20 # テスト用に上限を一時解放
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
@@ -117,7 +117,6 @@ def send_line_carousel(notify_items, all_articles):
         is_normal = any(kw in title_lower for kw in normal_keywords)
         is_special = not is_normal
 
-        # 同じ大会のフォームとリストを精密に紐付けて判定
         has_linked_cancel_wait = False
         if item.get("section") == "大会エントリーリスト":
             match_keywords = ["平日", "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王"]
@@ -133,6 +132,7 @@ def send_line_carousel(notify_items, all_articles):
         show_hero = False
         hero_image_url = ""
         
+        # 🌟 ロジックの核：特別大会（is_special）かつimg_urlが存在すれば、最優先でその画像を使う
         if is_special and item.get('img_url'):
             hero_image_url = item['img_url']
             show_hero = True
@@ -289,7 +289,7 @@ def send_line_carousel(notify_items, all_articles):
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     
-    # 10個のバブルがあると一度に送れる上限（10カルーセル）を超えるため、2回に分けて送信
+    # LINEの仕様上、最大10個のバブル制限を考慮して2回に分けて送信
     try:
         data1 = {
             "to": LINE_USER_ID,
@@ -299,14 +299,14 @@ def send_line_carousel(notify_items, all_articles):
                     "altText": "キングフィッシャーからのお知らせ（前半）",
                     "contents": {
                         "type": "carousel",
-                        "contents": bubbles[:7]
+                        "contents": bubbles[:10]
                     }
                 }
             ]
         }
         requests.post(url, headers=headers, json=data1).raise_for_status()
         
-        if len(bubbles) > 7:
+        if len(bubbles) > 10:
             data2 = {
                 "to": LINE_USER_ID,
                 "messages": [
@@ -315,24 +315,27 @@ def send_line_carousel(notify_items, all_articles):
                         "altText": "キングフィッシャーからのお知らせ（後半）",
                         "contents": {
                             "type": "carousel",
-                            "contents": bubbles[7:]
+                            "contents": bubbles[10:]
                         }
                     }
                 ]
             }
             requests.post(url, headers=headers, json=data2).raise_for_status()
             
-        print("LINEにテストメッセージ（全13パターン）を送信しました！")
+        print("LINEにテストメッセージ（全14パターン）を送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
 # ==========================================
-# メイン処理（全13パターンテストモード）
+# メイン処理（全14パターンテストモード）
 # ==========================================
 def main():
     print("--- 監視処理開始（全通知パターンテストモード） ---")
     
-    # 🌟 全13パターンのテストデータ（第6戦は通常、第5戦はキャン待ち状態に分離）
+    # 🌟 本物のアイキャッチ画像のURLを指定
+    sp_img = "https://kingfisher-tochigi.com/wordpress/wp-content/uploads/2026/09/e8c4aef9ece51423d146ab8a257b3823-1024x1024.png"
+    
+    # 全14パターンのテストデータ（特別大会の3状態も網羅）
     test_notify_list = [
         {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト1: 新規】第6戦エントリー開始", "url": "https://kingfisher-tochigi.com/t1"},
         {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト2: 更新】第6戦エントリー（定員増）", "url": "https://kingfisher-tochigi.com/t2"},
@@ -342,14 +345,17 @@ def main():
         {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト6: 新規】第6戦大会結果", "url": "https://kingfisher-tochigi.com/t6"},
         {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト7: 更新】第6戦大会結果（修正）", "url": "https://kingfisher-tochigi.com/t7"},
         {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト8: 新規】チーム戦 大会結果", "url": "https://kingfisher-tochigi.com/t8"},
-        {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト9: 更新】チーム戦 大会結果（修正）", "url": "https://kingfisher-tochigi.com/t9"},
-        {"section": "大会エントリー", "notify_type": "cancel_wait", "is_updated": True, "date": "2026年9月13日", "title": "【テスト10: キャン待ち】【現在キャンセル待ち】第5戦", "url": "https://kingfisher-tochigi.com/t10"},
-        {"section": "大会エントリー", "notify_type": "alert", "is_updated": True, "date": "2026年9月13日", "title": "【テスト11: アラート】平日大会 中止のお知らせ", "url": "https://kingfisher-tochigi.com/t11"},
-        {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【テスト12: リマインド】【現在キャンセル待ち：9月13日開催】第5戦エントリーフォーム", "url": "https://kingfisher-tochigi.com/t12", "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】くもり\n🌡️ 【気温】最高 25℃ / 最低 20℃\n🍃 【風向】北の風\n💨 【最大風速】約 2.4 m/s\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"},
-        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト13: 特別大会】全日本ジュニア・釣り女子エリアトラウト選手権大会", "url": "https://kingfisher-tochigi.com/t13", "img_url": "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/pokoasita.jpg"} # テスト用にダミーの別画像を使用
+        {"section": "大会エントリー", "notify_type": "cancel_wait", "is_updated": True, "date": "2026年9月13日", "title": "【テスト9: キャン待ち】【現在キャンセル待ち】第5戦", "url": "https://kingfisher-tochigi.com/t9"},
+        {"section": "大会エントリー", "notify_type": "alert", "is_updated": True, "date": "2026年9月13日", "title": "【テスト10: アラート】平日大会 中止のお知らせ", "url": "https://kingfisher-tochigi.com/t10"},
+        {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【テスト11: リマインド】【現在キャンセル待ち：9月13日開催】第5戦", "url": "https://kingfisher-tochigi.com/t11", "remind_msg": "明日の大田原市の予報です🐟..."},
+        
+        # 🌟 ここからがポイント：特別大会はどんな通知でもアイキャッチ画像を維持します
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【テスト12: 特別大会 新規】全日本ジュニア・釣り女子エリアトラウト選手権大会", "url": "https://kingfisher-tochigi.com/t12", "img_url": sp_img},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【テスト13: 特別大会 更新】全日本ジュニア・釣り女子エリアトラウト選手権大会", "url": "https://kingfisher-tochigi.com/t13", "img_url": sp_img},
+        {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【テスト14: 特別大会 リマインド】全日本ジュニア・釣り女子エリアトラウト選手権大会", "url": "https://kingfisher-tochigi.com/t14", "img_url": sp_img, "remind_msg": "明日の大田原市の予報です🐟..."}
     ]
     
-    print("【通知送信】全13パターンのカルーセルを個人宛てに送信します。")
+    print("【通知送信】全14パターンのカルーセルを個人宛てに送信します。")
     send_line_carousel(test_notify_list, test_notify_list)
             
     print("--- テスト実行のため、history.jsonの更新は行いません ---")
