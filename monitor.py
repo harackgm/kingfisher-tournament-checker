@@ -38,6 +38,8 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
+# 🌟 テスト確認用：USER_ID宛て個別送信（全員通知事故防止）
+LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 # 日本時間 (JST) 基準設定
 JST = timezone(timedelta(hours=9), 'JST')
@@ -97,14 +99,13 @@ def get_tomorrow_weather():
     return msg
 
 # ==========================================
-# LINE通知処理（登録者全員への一斉送信版）
+# LINE通知処理（テスト個別送信版）
 # ==========================================
 def send_line_carousel(notify_items, all_articles):
-    if not LINE_ACCESS_TOKEN:
-        print("エラー: LINE_ACCESS_TOKEN が設定されていません。")
+    if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
+        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
         return
     
-    # タイムスタンプ生成（LINEアプリ側キャッシュ回避用）
     ts = int(time.time())
     
     pokoasita_url = f"{POKOASITA_BASE}?t={ts}"
@@ -126,7 +127,6 @@ def send_line_carousel(notify_items, all_articles):
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
-        # 全セクション対応：バッジテキストと色の動的判定
         if notify_type == "alert":
             badge_color = "#FF0000"
             badge_text = "⚠️中止・延期のお知らせ"
@@ -137,7 +137,7 @@ def send_line_carousel(notify_items, all_articles):
             header_color = "#222222"
         else:
             if is_updated:
-                badge_color = "#FF8C00"  # 更新時共通オレンジ
+                badge_color = "#FF8C00"
                 if item['section'] == "大会エントリーリスト":
                     badge_text = "🔄エントリーリスト更新"
                 elif item['section'] == "大会エントリー":
@@ -303,26 +303,16 @@ def send_line_carousel(notify_items, all_articles):
                 ]
             }
         }
-        
-        if show_hero:
-            bubble["hero"] = {
-                "type": "image",
-                "url": hero_image_url,
-                "size": "full",
-                "aspectRatio": "1.51:1",
-                "aspectMode": "fit",
-                "backgroundColor": "#000000"
-            }
-            
         bubbles.append(bubble)
 
-    # 本番用：LINE登録者全員へ一斉送信（Broadcast API）
-    url = "https://api.line.me/v2/bot/message/broadcast"
+    # テスト用：LINE個人宛てへPush送信
+    url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     data = {
+        "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
@@ -338,7 +328,7 @@ def send_line_carousel(notify_items, all_articles):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEに一斉送信メッセージを送信しました！")
+        print("LINEにテストメッセージ（個人宛）を送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
@@ -346,58 +336,38 @@ def send_line_carousel(notify_items, all_articles):
 # スクレイピング処理
 # ==========================================
 def fetch_articles():
-    try:
-        response = requests.get(TARGET_URL, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-    except Exception as e:
-        print(f"取得エラー: {e}")
-        return []
-
-    soup = BeautifulSoup(response.content, "html.parser")
-    results = []
-
-    for h1 in soup.find_all("h1", class_="elementor-heading-title"):
-        section_title = h1.get_text(strip=True)
-        if section_title in TARGET_SECTIONS:
-            posts_container = h1.find_next("div", class_="elementor-posts-container")
-            if not posts_container:
-                continue
-            
-            articles = posts_container.find_all("article", class_="elementor-post")
-            for article in articles:
-                title_tag = article.find("h6", class_="elementor-post__title")
-                if not title_tag:
-                    continue
-                
-                a_tag = title_tag.find("a")
-                if not a_tag:
-                    continue
-                
-                date_tag = article.find("span", class_="elementor-post-date")
-                date_text = date_tag.get_text(strip=True) if date_tag else ""
-                
-                img_tag = article.find("img")
-                img_url = img_tag.get("data-src") or img_tag.get("src", "") if img_tag else ""
-                
-                results.append({
-                    "section": section_title,
-                    "date": date_text,
-                    "title": a_tag.get_text(strip=True),
-                    "url": a_tag.get("href"),
-                    "img_url": img_url
-                })
-    return results
+    # 🌟 重複防止検証用のダミーデータを返却
+    return [
+        {
+            "section": "大会エントリー",
+            "date": "2026年9月12日",
+            "title": f"【現在キャンセル待ち：{TOMORROW.month}月{TOMORROW.day}日開催】シリーズ第5戦エントリーフォーム",
+            "url": "https://kingfisher-tochigi.com/t_entry",
+            "img_url": ""
+        },
+        {
+            "section": "大会エントリーリスト",
+            "date": "2026年9月12日",
+            "title": f"【{TOMORROW.month}月{TOMORROW.day}日開催】第5戦エントリーリスト",
+            "url": "https://kingfisher-tochigi.com/t_list",
+            "img_url": ""
+        }
+    ]
 
 # ==========================================
-# メイン処理（公開本番用）
+# メイン処理（重複防止検証・テストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（公開本番モード） ---")
+    print("--- 監視処理開始（リマインド重複防止テストモード） ---")
     
     current_articles = fetch_articles()
-    history = load_history()
     
-    history_dict = {item["url"]: item for item in history}
+    # 履歴を擬似的に作成（前回まで登録済みで、まだリマインドしていない状態）
+    history_dict = {
+        "https://kingfisher-tochigi.com/t_entry": {"section": "大会エントリー", "title": current_articles[0]["title"], "url": "https://kingfisher-tochigi.com/t_entry", "reminded": False},
+        "https://kingfisher-tochigi.com/t_list": {"section": "大会エントリーリスト", "title": current_articles[1]["title"], "url": "https://kingfisher-tochigi.com/t_list", "reminded": False}
+    }
+    
     notify_list = []
 
     for article in current_articles:
@@ -405,52 +375,18 @@ def main():
         title = article["title"]
         
         is_new_or_updated = False
-        
-        # ① 完全新規の検知
-        if url not in history_dict:
-            article_copy = article.copy()
-            article_copy["is_updated"] = False # 初回作成フラグ
-            if "キャンセル待ち" in title:
-                article_copy["notify_type"] = "cancel_wait"
-            else:
-                article_copy["notify_type"] = "new"
-            notify_list.append(article_copy)
-            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
-            is_new_or_updated = True
-        else:
-            past_article = history_dict[url]
-            # ② タイトル変更（中止・延期・キャンセル待ち等の変更）の検知
-            if past_article.get("title") != title:
-                article_copy = article.copy()
-                article_copy["is_updated"] = True # 更新フラグ
-                if "中止" in title or "延期" in title:
-                    article_copy["notify_type"] = "alert"
-                    notify_list.append(article_copy)
-                    is_new_or_updated = True
-                elif "キャンセル待ち" in title and "キャンセル待ち" not in past_article.get("title"):
-                    article_copy["notify_type"] = "cancel_wait"
-                    notify_list.append(article_copy)
-                    is_new_or_updated = True
-                elif "キャンセル待ち" not in title and "キャンセル待ち" in past_article.get("title"):
-                    article_copy["notify_type"] = "new"
-                    notify_list.append(article_copy)
-                    is_new_or_updated = True
-                else:
-                    article_copy["notify_type"] = "new"
-                    notify_list.append(article_copy)
-                    is_new_or_updated = True
-                past_article["title"] = title
+        past_article = history_dict[url]
         
         # ③ 明日開催の自動検知＆リマインド
-        past_article = history_dict[url]
         if not is_new_or_updated and not past_article.get("reminded", False):
-            match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
-            if match:
-                m = int(match.group(1))
-                d = int(match.group(2))
-                if m == TOMORROW.month and d == TOMORROW.day:
-                    # 日本時間で18時〜21時台（18:00〜21:59）にのみリマインドを発動させる制御
-                    if 18 <= CURRENT_TIME.hour <= 21:
+            # 🌟 修正ポイント: リマインド対象を「大会エントリー」のみに限定
+            if past_article.get("section") == "大会エントリー":
+                match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
+                if match:
+                    m = int(match.group(1))
+                    d = int(match.group(2))
+                    if m == TOMORROW.month and d == TOMORROW.day:
+                        # テストのため時間制限（18〜21時）は一時的に解除して即時発動
                         article_copy = article.copy()
                         article_copy["notify_type"] = "remind"
                         weather = get_tomorrow_weather()
@@ -461,15 +397,10 @@ def main():
     if not notify_list:
         print("新規更新、日程変更、前日リマインドはありません。")
     else:
-        new_count = len(notify_list)
-        if new_count > MAX_NOTIFY_LIMIT:
-            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
-        else:
-            print(f"【通知送信】{new_count}件の情報をLINEの登録者全員へ一斉送信します。")
-            send_line_carousel(notify_list, current_articles)
+        print(f"【通知送信】{len(notify_list)}件のリマインドを個人宛てに送信します。")
+        send_line_carousel(notify_list, current_articles)
             
-    updated_history = list(history_dict.values())
-    save_history(updated_history)
+    print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
 
 if __name__ == "__main__":
