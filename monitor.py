@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
+MAX_NOTIFY_LIMIT = 15 # テスト用に上限を一時解放
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
@@ -38,65 +38,12 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
-# 🌟 テスト確認用：USER_ID宛て個別送信（全員通知事故防止）
+# 🌟 テスト確認用：USER_ID宛て個別送信
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 # 日本時間 (JST) 基準設定
 JST = timezone(timedelta(hours=9), 'JST')
 CURRENT_TIME = datetime.now(JST)
-TOMORROW = CURRENT_TIME + timedelta(days=1)
-
-# ==========================================
-# データ管理処理
-# ==========================================
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-def save_history(history_list):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history_list, f, ensure_ascii=False, indent=2)
-
-# ==========================================
-# 大田原市の詳細な明日の天気取得
-# ==========================================
-def get_tomorrow_weather():
-    weather_text = "確認できませんでした"
-    wind_text = "-"
-    
-    try:
-        url_jma = "https://www.jma.go.jp/bosai/forecast/data/forecast/090000.json"
-        res_jma = requests.get(url_jma, timeout=10).json()
-        for area in res_jma[0]["timeSeries"][0]["areas"]:
-            if area["area"]["name"] == "北部":
-                weathers = area["weathers"]
-                winds = area.get("winds", [])
-                idx = 1 if len(weathers) > 1 else 0
-                weather_text = weathers[idx].replace(" ", " ")
-                if len(winds) > idx:
-                    wind_text = winds[idx].replace(" ", " ")
-    except Exception as e:
-        print(f"気象庁APIエラー: {e}")
-        
-    temp_max = "-"
-    temp_min = "-"
-    wind_speed = "-"
-    try:
-        url_om = "https://api.open-meteo.com/v1/forecast?latitude=36.87&longitude=140.01&daily=temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia%2FTokyo&wind_speed_unit=ms"
-        res_om = requests.get(url_om, timeout=10).json()
-        temp_max = round(res_om["daily"]["temperature_2m_max"][1])
-        temp_min = round(res_om["daily"]["temperature_2m_min"][1])
-        wind_speed = round(res_om["daily"]["windspeed_10m_max"][1], 1)
-    except Exception as e:
-        print(f"Open-Meteo APIエラー: {e}")
-
-    msg = f"🌤️ 【天気】{weather_text}\n"
-    msg += f"🌡️ 【気温】最高 {temp_max}℃ / 最低 {temp_min}℃\n"
-    msg += f"🍃 【風向】{wind_text}\n"
-    msg += f"💨 【最大風速】約 {wind_speed} m/s"
-    return msg
 
 # ==========================================
 # LINE通知処理（テスト個別送信版）
@@ -127,7 +74,6 @@ def send_line_carousel(notify_items, all_articles):
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
-        # 🌟 リマインド通知時のタイトル自動整形（不格好な「キャンセル待ち」表記を削除）
         display_title = item['title']
         if notify_type == "remind":
             display_title = display_title.replace("【現在キャンセル待ち：", "【")
@@ -242,7 +188,7 @@ def send_line_carousel(notify_items, all_articles):
             },
             {
                 "type": "text",
-                "text": display_title, # 🌟 自動整形された綺麗なタイトルを使用
+                "text": display_title,
                 "weight": "bold",
                 "color": "#FFFFFF",
                 "size": "md",
@@ -329,15 +275,17 @@ def send_line_carousel(notify_items, all_articles):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
+    
+    # 10個のバブルがあると一度に送れる上限（10カルーセル）に達するため、そのまま送信
     data = {
         "to": LINE_USER_ID,
         "messages": [
             {
                 "type": "flex",
-                "altText": "キングフィッシャーからのお知らせ",
+                "altText": "キングフィッシャーからのお知らせ（全パターンテスト）",
                 "contents": {
                     "type": "carousel",
-                    "contents": bubbles
+                    "contents": bubbles[:10]
                 }
             }
         ]
@@ -346,77 +294,34 @@ def send_line_carousel(notify_items, all_articles):
     try:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        print("LINEにテストメッセージ（個人宛）を送信しました！")
+        print("LINEにテストメッセージ（全パターン）を送信しました！")
     except Exception as e:
         print(f"LINE通知エラー: {e}")
 
 # ==========================================
-# スクレイピング処理
-# ==========================================
-def fetch_articles():
-    # 🌟 検証用ダミーデータ（フォームとリストの両方）
-    return [
-        {
-            "section": "大会エントリー",
-            "date": "2026年9月12日",
-            "title": f"【現在キャンセル待ち：{TOMORROW.month}月{TOMORROW.day}日開催】シリーズ第5戦エントリーフォーム",
-            "url": "https://kingfisher-tochigi.com/t_entry",
-            "img_url": ""
-        },
-        {
-            "section": "大会エントリーリスト",
-            "date": "2026年9月12日",
-            "title": f"【{TOMORROW.month}月{TOMORROW.day}日開催】第5戦エントリーリスト",
-            "url": "https://kingfisher-tochigi.com/t_list",
-            "img_url": ""
-        }
-    ]
-
-# ==========================================
-# メイン処理（重複防止＆タイトル整形テストモード）
+# メイン処理（全パターンテストモード）
 # ==========================================
 def main():
-    print("--- 監視処理開始（リマインド改善テストモード） ---")
+    print("--- 監視処理開始（全通知パターンテストモード） ---")
     
-    current_articles = fetch_articles()
+    # 🌟 全10パターンのテストデータを生成
+    test_notify_list = [
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【1. 新規】第5戦エントリー開始", "url": "https://kingfisher-tochigi.com/t1"},
+        {"section": "大会エントリー", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【2. 更新】第5戦エントリー情報（定員増など）", "url": "https://kingfisher-tochigi.com/t2"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【3. 新規】第5戦エントリーリスト", "url": "https://kingfisher-tochigi.com/t3"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【4. 更新】第5戦エントリーリスト（通常更新）", "url": "https://kingfisher-tochigi.com/t4"},
+        {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【5. キャン待ち更新】第5戦エントリーリスト（キャンセル待ち）", "url": "https://kingfisher-tochigi.com/t5"},
+        {"section": "大会結果", "notify_type": "new", "is_updated": False, "date": "2026年9月13日", "title": "【6. 新規】第5戦大会結果", "url": "https://kingfisher-tochigi.com/t6"},
+        {"section": "大会結果", "notify_type": "new", "is_updated": True, "date": "2026年9月13日", "title": "【7. 更新】第5戦大会結果（修正等）", "url": "https://kingfisher-tochigi.com/t7"},
+        {"section": "大会エントリー", "notify_type": "cancel_wait", "is_updated": True, "date": "2026年9月13日", "title": "【8. キャン待ち】第5戦（現在キャンセル待ち）", "url": "https://kingfisher-tochigi.com/t8"},
+        {"section": "大会エントリー", "notify_type": "alert", "is_updated": True, "date": "2026年9月13日", "title": "【9. アラート】第5戦 中止のお知らせ", "url": "https://kingfisher-tochigi.com/t9"},
+        {"section": "大会エントリー", "notify_type": "remind", "is_updated": False, "date": "2026年9月13日", "title": "【10. リマインド】現在キャンセル待ち：第5戦エントリー（※タイトル整形テスト）", "url": "https://kingfisher-tochigi.com/t10", 
+         "remind_msg": "明日の大田原市の予報です🐟\n\n🌤️ 【天気】くもり\n🌡️ 【気温】最高 25℃ / 最低 20℃\n🍃 【風向】北の風\n💨 【最大風速】約 2.4 m/s\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"}
+    ]
     
-    # 履歴を擬似的に作成（前回まで登録済みで、まだリマインドしていない状態）
-    history_dict = {
-        "https://kingfisher-tochigi.com/t_entry": {"section": "大会エントリー", "title": current_articles[0]["title"], "url": "https://kingfisher-tochigi.com/t_entry", "reminded": False},
-        "https://kingfisher-tochigi.com/t_list": {"section": "大会エントリーリスト", "title": current_articles[1]["title"], "url": "https://kingfisher-tochigi.com/t_list", "reminded": False}
-    }
-    
-    notify_list = []
-
-    for article in current_articles:
-        url = article["url"]
-        title = article["title"]
-        
-        is_new_or_updated = False
-        past_article = history_dict[url]
-        
-        # ③ 明日開催の自動検知＆リマインド
-        if not is_new_or_updated and not past_article.get("reminded", False):
-            # 🌟 対象を「大会エントリー」の1通のみに限定（リスト側は無視）
-            if past_article.get("section") == "大会エントリー":
-                match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
-                if match:
-                    m = int(match.group(1))
-                    d = int(match.group(2))
-                    if m == TOMORROW.month and d == TOMORROW.day:
-                        # テストのため時間制限は解除して即時発動
-                        article_copy = article.copy()
-                        article_copy["notify_type"] = "remind"
-                        weather = get_tomorrow_weather()
-                        article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n受付時間や費用の詳細はリンク先をご確認ください。明日は頑張ってください🎣✨"
-                        notify_list.append(article_copy)
-                        past_article["reminded"] = True
-
-    if not notify_list:
-        print("新規更新、日程変更、前日リマインドはありません。")
-    else:
-        print(f"【通知送信】{len(notify_list)}件のリマインドを個人宛てに送信します。")
-        send_line_carousel(notify_list, current_articles)
+    print("【通知送信】全10パターンのカルーセルを個人宛てに送信します。")
+    # 全体を渡して連携用ロジック（has_global_cancel_wait等）も同時に走らせます
+    send_line_carousel(test_notify_list, test_notify_list)
             
     print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
