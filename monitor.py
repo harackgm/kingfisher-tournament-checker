@@ -108,7 +108,6 @@ def send_line_carousel(notify_items, all_articles):
                 badge_text = item['section']
             header_color = "#000000"
 
-        # 特別大会判定
         normal_keywords = [
             "weekday", "平日", 
             "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", 
@@ -122,7 +121,6 @@ def send_line_carousel(notify_items, all_articles):
         is_normal = any(kw in title_lower for kw in normal_keywords)
         is_special = not is_normal
 
-        # 同じ大会のフォームとリストを精密に紐付けて判定
         has_linked_cancel_wait = False
         if item.get("section") == "大会エントリーリスト":
             match_keywords = ["平日", "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王"]
@@ -138,7 +136,7 @@ def send_line_carousel(notify_items, all_articles):
         show_hero = False
         hero_image_url = ""
         
-        # 🌟 画像出し分けロジック（チーム戦用の分岐を追加）
+        # 画像出し分けロジック
         if is_special and item.get('img_url'):
             hero_image_url = item['img_url']
             show_hero = True
@@ -333,7 +331,7 @@ def send_line_carousel(notify_items, all_articles):
 def main():
     print("--- 監視処理開始（チーム戦画像テストモード） ---")
     
-    # 🌟 チーム戦の5つの状態を網羅するテストデータ
+    # テストデータ
     test_notify_list = [
         {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": False, "date": "2026年9月15日", "title": "【テスト1: 新規】チーム戦 エントリーリスト", "url": "https://kingfisher-tochigi.com/team1"},
         {"section": "大会エントリーリスト", "notify_type": "new", "is_updated": True, "date": "2026年9月15日", "title": "【テスト2: 更新】チーム戦 エントリーリスト（追加）", "url": "https://kingfisher-tochigi.com/team2"},
@@ -343,7 +341,8 @@ def main():
     ]
     
     print("【通知送信】チーム戦の5パターンを個人宛てに送信します。")
-    send_line_carousel(test_notify_list, test_notify_list)
+    # 🌟 修正ポイント: 誤連動を防ぐため、all_articles(サイト全体の記事状態)として空リスト[]を渡し、純粋な挙動のみをテストさせます。
+    send_line_carousel(test_notify_list, [])
             
     print("--- テスト実行のため、history.jsonの更新は行いません ---")
     print("--- 監視処理終了 ---")
