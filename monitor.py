@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 TARGET_URL = "https://kingfisher-tochigi.com/"
 HISTORY_FILE = "history.json"
-MAX_NOTIFY_LIMIT = 15 # テスト用に上限を一時解放
+MAX_NOTIFY_LIMIT = 5 # 大量通知ストッパー（安全装置）
 
 LOGO_URL = "https://raw.githubusercontent.com/harackgm/kingfisher-tournament-checker/main/kinglogo.png"
 
@@ -40,13 +40,24 @@ HEADERS = {
 }
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN")
-# 🌟 テスト確認用：USER_ID宛て個別送信
-LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 # 日本時間 (JST) 基準設定
 JST = timezone(timedelta(hours=9), 'JST')
 CURRENT_TIME = datetime.now(JST)
 TOMORROW = CURRENT_TIME + timedelta(days=1)
+
+# ==========================================
+# データ管理処理
+# ==========================================
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_history(history_list):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history_list, f, ensure_ascii=False, indent=2)
 
 # ==========================================
 # 大田原市の詳細な明日の天気取得
@@ -88,15 +99,15 @@ def get_tomorrow_weather():
     return msg
 
 # ==========================================
-# LINE通知処理（テスト個別送信版）
+# LINE通知処理（登録者全員への一斉送信版）
 # ==========================================
 def send_line_carousel(notify_items, all_articles):
-    if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
-        print("エラー: LINE_ACCESS_TOKEN または LINE_USER_ID が設定されていません。")
+    if not LINE_ACCESS_TOKEN:
+        print("エラー: LINE_ACCESS_TOKEN が設定されていません。")
         return
     
+    # タイムスタンプ生成（キャッシュ回避用）
     ts = int(time.time())
-    
     pokoasita_url = f"{POKOASITA_BASE}?t={ts}"
     pokocan_url = f"{POKOCAN_BASE}?t={ts}"
     pokoentry_url = f"{POKOENTRY_BASE}?t={ts}"
@@ -113,12 +124,14 @@ def send_line_carousel(notify_items, all_articles):
         notify_type = item.get("notify_type", "new")
         is_updated = item.get("is_updated", False)
         
+        # リマインド通知時のタイトル自動整形
         display_title = item['title']
         if notify_type == "remind":
             display_title = display_title.replace("【現在キャンセル待ち：", "【")
             display_title = display_title.replace("現在キャンセル待ち：", "").replace("現在キャンセル待ち", "")
             display_title = display_title.replace("【キャンセル待ち】", "").replace("キャンセル待ち", "")
         
+        # バッジ色とテキストの設定
         if notify_type == "alert":
             badge_color = "#FF0000"
             badge_text = "⚠️中止・延期のお知らせ"
@@ -147,6 +160,7 @@ def send_line_carousel(notify_items, all_articles):
                 badge_text = item['section']
             header_color = "#000000"
 
+        # 特別大会の判定
         normal_keywords = [
             "weekday", "平日", 
             "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", 
@@ -160,9 +174,23 @@ def send_line_carousel(notify_items, all_articles):
         is_normal = any(kw in title_lower for kw in normal_keywords)
         is_special = not is_normal
 
+        # エントリーリストのキャンセル待ち連動判定
+        has_linked_cancel_wait = False
+        if item.get("section") == "大会エントリーリスト":
+            match_keywords = ["平日", "第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王"]
+            for kw in match_keywords:
+                if kw in item['title']:
+                    for art in all_articles:
+                        if art.get("section") == "大会エントリー" and kw in art.get("title", ""):
+                            if "キャンセル待ち" in art.get("title", ""):
+                                has_linked_cancel_wait = True
+                            break
+                    break
+            
         show_hero = False
         hero_image_url = ""
         
+        # 🌟 画像出し分けロジック
         if is_special and item.get('img_url'):
             hero_image_url = item['img_url']
             show_hero = True
@@ -170,6 +198,43 @@ def send_line_carousel(notify_items, all_articles):
             if notify_type == "remind":
                 hero_image_url = pokoasita_url
                 show_hero = True
+            elif notify_type == "cancel_wait":
+                # フォームがキャンセル待ちになった時
+                if "チーム戦" in title_lower:
+                    hero_image_url = pokocanteam_url
+                else:
+                    hero_image_url = pokocan_url
+                show_hero = True
+            elif notify_type == "alert":
+                hero_image_url = pokostop_url
+                show_hero = True
+            elif notify_type == "new":
+                if item.get("section") == "大会エントリー":
+                    if "チーム戦" in title_lower:
+                        hero_image_url = pokolistteam_url
+                    else:
+                        hero_image_url = pokoentry_url
+                    show_hero = True
+                elif item.get("section") == "大会結果":
+                    if "チーム戦" in title_lower:
+                        hero_image_url = pokosteam_url
+                    else:
+                        hero_image_url = pokosingle_url
+                    show_hero = True
+                elif item.get("section") == "大会エントリーリスト":
+                    if "キャンセル待ち" in title_lower or has_linked_cancel_wait:
+                        # リストがキャンセル待ち（連動含む）になった時
+                        if "チーム戦" in title_lower:
+                            hero_image_url = pokocanteam_url
+                        else:
+                            hero_image_url = pokolistcan_url
+                    else:
+                        # リストの新規公開時、またはキャンセル待ち解除時
+                        if "チーム戦" in title_lower:
+                            hero_image_url = pokolistteam_url
+                        else:
+                            hero_image_url = pokolist_url
+                    show_hero = True
             
         body_contents = [
             {
@@ -290,90 +355,178 @@ def send_line_carousel(notify_items, all_articles):
             
         bubbles.append(bubble)
 
-    # 🌟 テスト用：LINE個人宛てへPush送信
-    url = "https://api.line.me/v2/bot/message/push"
+    # 🌟 本番用：LINE登録者全員へ一斉送信（Broadcast API）
+    url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
     
-    data = {
-        "to": LINE_USER_ID,
-        "messages": [
-            {
-                "type": "flex",
-                "altText": "キングフィッシャーからのお知らせ",
-                "contents": {
-                    "type": "carousel",
-                    "contents": bubbles
+    # 10件以上の通知がある場合は分割して送信（LINEの仕様対策）
+    for i in range(0, len(bubbles), 10):
+        data = {
+            "messages": [
+                {
+                    "type": "flex",
+                    "altText": "キングフィッシャーからのお知らせ",
+                    "contents": {
+                        "type": "carousel",
+                        "contents": bubbles[i:i+10]
+                    }
                 }
-            }
-        ]
-    }
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        print("LINEにテストメッセージ（リマインドURLテスト）を送信しました！")
-    except Exception as e:
-        print(f"LINE通知エラー: {e}")
+            ]
+        }
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+        except Exception as e:
+            print(f"LINE通知エラー: {e}")
+    print("LINEに一斉送信メッセージを送信しました！")
 
 # ==========================================
-# メイン処理（テストモード）
+# スクレイピング処理
+# ==========================================
+def fetch_articles():
+    try:
+        response = requests.get(TARGET_URL, headers=HEADERS, timeout=15)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"取得エラー: {e}")
+        return []
+
+    soup = BeautifulSoup(response.content, "html.parser")
+    results = []
+
+    for h1 in soup.find_all("h1", class_="elementor-heading-title"):
+        section_title = h1.get_text(strip=True)
+        if section_title in TARGET_SECTIONS:
+            posts_container = h1.find_next("div", class_="elementor-posts-container")
+            if not posts_container:
+                continue
+            
+            articles = posts_container.find_all("article", class_="elementor-post")
+            for article in articles:
+                title_tag = article.find("h6", class_="elementor-post__title")
+                if not title_tag:
+                    continue
+                
+                a_tag = title_tag.find("a")
+                if not a_tag:
+                    continue
+                
+                date_tag = article.find("span", class_="elementor-post-date")
+                date_text = date_tag.get_text(strip=True) if date_tag else ""
+                
+                img_tag = article.find("img")
+                img_url = img_tag.get("data-src") or img_tag.get("src", "") if img_tag else ""
+                
+                results.append({
+                    "section": section_title,
+                    "date": date_text,
+                    "title": a_tag.get_text(strip=True),
+                    "url": a_tag.get("href"),
+                    "img_url": img_url
+                })
+    return results
+
+# ==========================================
+# メイン処理（公開本番用）
 # ==========================================
 def main():
-    print("--- 監視処理開始（リマインドURL変更テストモード） ---")
+    print("--- 監視処理開始（公開本番モード） ---")
     
-    # 疑似的な history.json データ（DBに保存されている状態を再現）
-    history_dict = {
-        "https://kingfisher-tochigi.com/entry2": {"section": "大会エントリー", "title": f"【{TOMORROW.month}月{TOMORROW.day}日開催！】平日大会2nd 第2戦エントリー", "url": "https://kingfisher-tochigi.com/entry2", "reminded": False},
-        "https://kingfisher-tochigi.com/list2": {"section": "大会エントリーリスト", "title": "【9月29日開催！】「平日大会2nd 第2戦」エントリーリスト", "url": "https://kingfisher-tochigi.com/list2", "reminded": False}
-    }
+    current_articles = fetch_articles()
+    history = load_history()
     
+    history_dict = {item["url"]: item for item in history}
     notify_list = []
 
-    # テスト対象として「大会エントリー」の疑似データを1つ抽出
-    test_article = {
-        "section": "大会エントリー", 
-        "date": "2026年8月18日", 
-        "title": f"【現在キャンセル待ち：{TOMORROW.month}月{TOMORROW.day}日開催！】WEEKDAY TROUT Tournament 2026 2nd season 第2戦エントリー", 
-        "url": "https://kingfisher-tochigi.com/entry2"
-    }
-
-    url = test_article["url"]
-    title = test_article["title"]
-    past_article = history_dict[url]
-
-    # ③ 明日開催の自動検知＆リマインド
-    match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
-    if match:
-        m = int(match.group(1))
-        d = int(match.group(2))
-        if m == TOMORROW.month and d == TOMORROW.day:
-            article_copy = test_article.copy()
-            article_copy["notify_type"] = "remind"
-            weather = get_tomorrow_weather()
-            
-            # 🌟 文末のメッセージを「エントリーリストをご確認ください」に修正
-            article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n参加者の皆様はリンク先のエントリーリストをご確認ください。明日は頑張ってください🎣✨"
-            
-            # 🌟 リンク先を「大会エントリーリスト」に変更する処理
-            # 第〇戦などの固有キーワードを先に判定させるため順番を調整
-            match_keywords = ["第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王", "平日"]
-            for kw in match_keywords:
-                if kw in title:
-                    for hist_url, hist_item in history_dict.items():
-                        if hist_item.get("section") == "大会エントリーリスト" and kw in hist_item.get("title", ""):
-                            # 対応するリストのURLを発見したら上書き
-                            article_copy["url"] = hist_url
-                            break
-                    break
-            
+    for article in current_articles:
+        url = article["url"]
+        title = article["title"]
+        
+        is_new_or_updated = False
+        
+        # ① 完全新規の検知
+        if url not in history_dict:
+            article_copy = article.copy()
+            article_copy["is_updated"] = False 
+            if "キャンセル待ち" in title:
+                article_copy["notify_type"] = "cancel_wait"
+            else:
+                article_copy["notify_type"] = "new"
             notify_list.append(article_copy)
+            history_dict[url] = {"section": article["section"], "title": title, "url": url, "reminded": False}
+            is_new_or_updated = True
+        else:
+            past_article = history_dict[url]
+            # ② タイトル変更（更新）の検知
+            if past_article.get("title") != title:
+                article_copy = article.copy()
+                article_copy["is_updated"] = True 
+                if "中止" in title or "延期" in title:
+                    article_copy["notify_type"] = "alert"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                elif "キャンセル待ち" in title and "キャンセル待ち" not in past_article.get("title"):
+                    article_copy["notify_type"] = "cancel_wait"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                elif "キャンセル待ち" not in title and "キャンセル待ち" in past_article.get("title"):
+                    article_copy["notify_type"] = "new"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                else:
+                    article_copy["notify_type"] = "new"
+                    notify_list.append(article_copy)
+                    is_new_or_updated = True
+                past_article["title"] = title
+        
+        # ③ 明日開催の自動検知＆リマインド
+        past_article = history_dict[url]
+        if not is_new_or_updated and not past_article.get("reminded", False):
+            # リマインド対象を「大会エントリー」のみに限定
+            if past_article.get("section") == "大会エントリー":
+                match = re.search(r'(\d{1,2})月(\d{1,2})日', title)
+                if match:
+                    m = int(match.group(1))
+                    d = int(match.group(2))
+                    if m == TOMORROW.month and d == TOMORROW.day:
+                        # 18時〜21時台のみリマインドを発動
+                        if 18 <= CURRENT_TIME.hour <= 21:
+                            article_copy = article.copy()
+                            article_copy["notify_type"] = "remind"
+                            weather = get_tomorrow_weather()
+                            
+                            # 🌟 リマインド文面の変更
+                            article_copy["remind_msg"] = f"明日の大田原市の予報です🐟\n\n{weather}\n\n参加者の皆様はリンク先のエントリーリストをご確認ください。明日は頑張ってください🎣✨"
+                            
+                            # 🌟 リンク先を「大会エントリーリスト」に変更する処理
+                            match_keywords = ["第1戦", "第2戦", "第3戦", "第4戦", "第5戦", "第6戦", "最終戦", "1st", "2nd", "3rd", "4th", "チーム戦", "マスターズ", "鉄板王", "平日"]
+                            for kw in match_keywords:
+                                if kw in title:
+                                    for hist_url, hist_item in history_dict.items():
+                                        if hist_item.get("section") == "大会エントリーリスト" and kw in hist_item.get("title", ""):
+                                            # 対応するリストのURLを発見したら上書き
+                                            article_copy["url"] = hist_url
+                                            break
+                                    break
 
-    print("【通知送信】リマインド通知（リンク先リスト変更）を個人宛てに送信します。")
-    send_line_carousel(notify_list, [])
+                            notify_list.append(article_copy)
+                            past_article["reminded"] = True
+
+    if not notify_list:
+        print("新規更新、日程変更、前日リマインドはありません。")
+    else:
+        new_count = len(notify_list)
+        if new_count > MAX_NOTIFY_LIMIT:
+            print(f"【安全装置作動】{new_count}件の通知を検知しましたが上限を超えたためスキップします。")
+        else:
+            print(f"【通知送信】{new_count}件の情報をLINEの登録者全員へ一斉送信します。")
+            send_line_carousel(notify_list, current_articles)
             
-    print("--- テスト実行のため、history.jsonの更新は行いません ---")
+    updated_history = list(history_dict.values())
+    save_history(updated_history)
     print("--- 監視処理終了 ---")
 
 if __name__ == "__main__":
